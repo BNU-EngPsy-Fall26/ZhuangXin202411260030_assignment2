@@ -28,3 +28,12 @@ body[data-route="home"]>.site-header,body[data-route="home"]>main,body[data-rout
 
 /* The juice task unlocks after the eye-tracked bakery task. */
 .ready-game .button:disabled{cursor:not-allowed;opacity:.58;box-shadow:2px 2px 0 var(--ink);transform:none}
+
+/* Failure details must remain reachable on shorter laptop displays. */
+.lab-gate{overflow:auto;padding:20px}
+.lab-gate>.gaze-check-result{width:min(780px,100%);max-width:780px;max-height:100%;overflow:auto}
+.gaze-check-details{margin:16px 0 24px;border-top:1px solid var(--line);padding-top:12px}
+.gaze-check-details summary{cursor:pointer;font-weight:700}
+.gaze-check-details .table-wrap{margin:12px 0;overflow-x:auto}
+.gaze-check-details .result-table{font-size:14px;width:100%;white-space:nowrap}
+.gaze-check-details .field-hint{font-size:14px;margin-bottom:6px}
