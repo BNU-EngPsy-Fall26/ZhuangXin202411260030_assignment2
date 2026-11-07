@@ -11,9 +11,57 @@
   const INK = '#29251f', PAPER = '#fff9e7', YELLOW = '#ffdc3f', RED = '#d94a35';
   const FONT = '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
   const OVENS = Object.freeze([
+    { x: 50, y: 24, w: 460, h: 276 }, { x: 690, y: 24, w: 460, h: 276 },
+    { x: 50, y: 340, w: 460, h: 276 }, { x: 690, y: 340, w: 460, h: 276 }
+  ].map(Object.freeze));
+  const LAYOUT = Object.freeze({ id: 'bakery-spread-v2', canvas: Object.freeze({ width: W, height: H }), ovens: OVENS });
+  // Source rectangles describe the existing illustration in its old 960×640
+  // display space. Only the four illustrated ovens are drawn, never the old grid.
+  const OVEN_CROPS = Object.freeze([
     { x: 201, y: 57, w: 296, h: 222 }, { x: 501, y: 57, w: 296, h: 222 },
     { x: 201, y: 283, w: 296, h: 222 }, { x: 501, y: 283, w: 296, h: 222 }
   ].map(Object.freeze));
+  function ovenAt(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return -1;
+    return OVENS.findIndex(box => x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h);
+  }
+  // Shared by gameplay and the v2 heatmap so image, visible labels and AOIs cannot
+  // drift apart. It deliberately renders no task score or response feedback.
+  function drawScene(ctx, image, view = {}) {
+    const box = (x,y,w,h,fill,stroke=INK,lineWidth=2,radius=12) => {
+      ctx.beginPath();ctx.roundRect(x,y,w,h,radius);
+      if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lineWidth;ctx.stroke();}
+    };
+    const text = (value,x,y,size=18,color=INK,weight=700) => {
+      ctx.fillStyle=color;ctx.font=`${weight} ${size}px ${FONT}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(String(value),x,y);
+    };
+    ctx.clearRect(0,0,W,H);ctx.fillStyle='#fff4cd';ctx.fillRect(0,0,W,H);
+    // Quiet paper background keeps the four illustrated ovens as the main targets.
+    ctx.strokeStyle='#e5cc8a';ctx.lineWidth=1;
+    for(let y=0;y<=H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+    OVENS.forEach((oven,index)=>{
+      const crop=OVEN_CROPS[index],factor=view.mapping?.find(row=>row.oven===index);
+      ctx.save();ctx.shadowColor='#5d3d2633';ctx.shadowBlur=12;ctx.shadowOffsetY=6;
+      box(oven.x,oven.y,oven.w,oven.h,'#f9ca58',null,0,23);ctx.restore();
+      if(image){
+        const sx=(image.naturalWidth||image.width)/960,sy=(image.naturalHeight||image.height)/640;
+        ctx.save();ctx.beginPath();ctx.roundRect(oven.x,oven.y,oven.w,oven.h,23);ctx.clip();
+        ctx.drawImage(image,crop.x*sx,crop.y*sy,crop.w*sx,crop.h*sy,oven.x,oven.y,oven.w,oven.h);ctx.restore();
+      }
+      const emphasis=view.condition==='value_cue'&&factor?.value==='high';
+      if(emphasis){box(oven.x+3,oven.y+3,oven.w-6,oven.h-6,null,PAPER,10,24);box(oven.x+3,oven.y+3,oven.w-6,oven.h-6,null,'#276d6a',6,24);}
+      const labelX=oven.x+(oven.w-328)/2,labelY=oven.y+68;
+      box(labelX,labelY,44,34,'#fff7df','#684226',2,7);text(index+1,labelX+22,labelY+17,21,INK,900);
+      if(factor){
+        box(labelX+54,labelY,126,34,'#fff7df','#684226',2,16);text(factor.frequency==='high'?'常出炉':'较少出炉',labelX+117,labelY+17,16,'#725e42');
+        box(labelX+190,labelY,138,34,'#fff7df','#684226',2,16);text(factor.value==='high'?'漏掉 −5':'漏掉 −1',labelX+259,labelY+17,16,'#725e42');
+      }
+      if(view.activeOvens?.includes(index+1)){
+        box(oven.x+oven.w/2-110,oven.y+151,220,48,'#fff1a7','#6a3f26',3,12);
+        text(`出炉了！按 ${index+1}`,oven.x+oven.w/2,oven.y+175,23,'#7c351f',900);
+      }
+    });
+  }
   const CONDITIONS = Object.freeze([
     { id: 'baseline', name: '普通界面', note: '四台烤箱都不加边框。' },
     { id: 'value_cue', name: '价值提示', note: '漏掉损失大的两台加边框。' }
@@ -84,7 +132,7 @@
     const mapping = shuffle(FACTORS, random).map((factor, oven) => ({ oven, ...factor }));
     const orderIndex = seed % ORDERS.length;
     return {
-      version: info.version, ...modeFields(info), seed, participantId, orderIndex,
+      version: info.version, layoutId: LAYOUT.id, ...modeFields(info), seed, participantId, orderIndex,
       assignment: 'Seeded two-order allocation; not guaranteed balanced in a small sample.',
       mapping, responseWindowMs: 1800, gazeBinMs: BIN_MS,
       formalDurationMs: BLOCK_MS * ORDERS[orderIndex].length, totalScheduledEvents: EVENTS_PER_BLOCK * ORDERS[orderIndex].length,
@@ -185,7 +233,7 @@
       const activeEvents = active ? active.events.filter(e => e.outcome === 'pending') : [];
       const all = blocks.flatMap(b => b.events);
       return {
-        type: 'seev_bakery', version: plan.version, phase, testOnly: info.testOnly, ...modeFields(info), simulation, formal: phase === 'running', uploads: false,
+        type: 'seev_bakery', version: plan.version, layoutId: LAYOUT.id, phase, testOnly: info.testOnly, ...modeFields(info), simulation, formal: phase === 'running', uploads: false,
         runId, block: ['running', 'block_intro', 'break'].includes(phase) ? blockIndex + 1 : null,
         totalBlocks: plan.blocks.length, condition: ['running', 'block_intro', 'break'].includes(phase) ? plan.blocks[blockIndex].conditionId : null,
         elapsedMs: active?.elapsedMs || 0, durationMs: active?.durationMs || BLOCK_MS,
@@ -211,7 +259,7 @@
         schemaVersion: 2, experiment: info.experiment, testOnly: info.testOnly, ...modeFields(info), simulation,
         runId, version: plan.version, status: phase === 'complete' ? 'complete' : phase === 'aborted' ? 'aborted' : 'in_progress',
         completed: phase === 'complete', aborted: phase === 'aborted', abortReason,
-        createdAt, completedAt, participantId: plan.participantId, plan: copy(plan),
+        createdAt, completedAt, participantId: plan.participantId, plan: copy(plan), layout: copy(LAYOUT),
         practice: practice ? snapshot(practice) : null, blocks: blocks.map(snapshot),
         gazeValidation: options.gazeReport ? copy(options.gazeReport) : null,
         gazeCoordinates: { space: 'canvas', units: 'logical_pixels', width: W, height: H, origin: 'top_left',
@@ -328,7 +376,7 @@
       const bin = Math.floor(elapsed / BIN_MS);
       const numeric = Number.isFinite(sample?.x) && Number.isFinite(sample?.y);
       const quality = numeric && sample.quality !== false && sample.valid !== false && sample.faceFresh !== false ;
-      const oven = quality ? OVENS.findIndex(box => sample.x >= box.x && sample.x <= box.x + box.w && sample.y >= box.y && sample.y <= box.y + box.h) : -1;
+      const oven = quality ? ovenAt(sample.x, sample.y) : -1;
       const row = { bin, tMs: elapsed, x: numeric ? sample.x : null, y: numeric ? sample.y : null, oven: oven >= 0 ? oven : null, quality, samples: 1, validSamples: quality ? 1 : 0 };
       const index = active.gazeBins.findIndex(item => item.bin === bin);
       if (index >= 0) {
@@ -375,9 +423,6 @@
       if (fill) { ctx.fillStyle = fill; ctx.fill(); }
       if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = width; ctx.stroke(); }
     }
-    function line(x1, y1, x2, y2, color = INK, width = 2) {
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.stroke();
-    }
     function text(value, x, y, size = 20, color = INK, weight = 700, align = 'left') {
       ctx.fillStyle = color; ctx.font = `${weight} ${size}px ${FONT}`;
       ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(String(value), x, y);
@@ -389,49 +434,9 @@
       if (destroyed) return;
       const state = session.getState();
       const condition = CONDITIONS.find(row => row.id === state.condition);
-      ctx.clearRect(0, 0, W, H);
-      if (imageReady) ctx.drawImage(background, 0, 0, 960, H);
-      else { ctx.fillStyle = '#f8d98b'; ctx.fillRect(0, 0, 960, H); }
-      ctx.fillStyle = PAPER; ctx.fillRect(960, 0, 240, H); line(960, 0, 960, H, INK, 4);
-      pill(state.phase === 'running' ? `第 ${state.block} / ${state.totalBlocks} 段` : state.phase === 'practice' ? '练习' : '实验一', 978, 22, 115, YELLOW);
-      text('饼干别烤焦', 979, 83, 28, INK, 900);
-      text(condition?.name || '照看四台烤箱', 979, 122, 17, '#725e42', 650);
-      line(979, 151, 1181, 151, '#d7c59d', 2);
-      text('看到“出炉了”', 979, 187, 19, INK, 750);
-      text('按对应数字键。', 979, 218, 19, INK, 750);
-      text('几台同时出炉时，', 979, 269, 16, '#725e42', 550);
-      text('可以依次取出。', 979, 296, 16, '#725e42', 550);
-      text('尽量少漏掉重要订单。', 979, 338, 16, '#725e42', 550);
-      line(979, 383, 1181, 383, '#d7c59d', 2);
-      text('键盘操作', 979, 414, 15, '#725e42', 650);
-      [1, 2, 3, 4].forEach((n, i) => {
-        roundRect(979 + i * 50, 438, 39, 37, 6, '#ffdf65', INK, 2);
-        text(n, 998.5 + i * 50, 456.5, 18, INK, 850, 'center');
-      });
-      roundRect(978, 511, 203, 86, 10, '#ffedb1', INK, 2);
-      const notice = state.phase === 'running' ? ['保持坐姿，', '请继续看四台烤箱。'] : wrap(state.message || '准备好后开始。', 12);
-      notice.slice(0, 2).forEach((value, i) => text(value, 993, 539 + i * 27, 16, INK, i ? 550 : 750));
-      OVENS.forEach((box, index) => {
-        const factor = session.plan.mapping[index];
-        const emphasis = state.condition === 'value_cue' && factor.value === 'high';
-        // Value-cue condition highlights the two high-loss ovens with static outlines.
-        // Both frequency and loss labels remain visible in both conditions.
-        if (emphasis) {
-          roundRect(box.x + 3, box.y + 3, box.w - 6, box.h - 6, 24, null, PAPER, 10);
-          roundRect(box.x + 3, box.y + 3, box.w - 6, box.h - 6, 24, null, '#276d6a', 6);
-        }
-        roundRect(box.x + 9, box.y + 56, 31, 29, 6, '#fff7df', '#684226', 2.3);
-        text(index + 1, box.x + 24.5, box.y + 70.5, 17, INK, 900, 'center');
-        pill(factor.frequency === 'high' ? '常出炉' : '较少出炉', box.x + 47, box.y + 55, 90, '#fff7df', '#725e42');
-        pill(factor.value === 'high' ? '漏掉 −5' : '漏掉 −1', box.x + 143, box.y + 55, 88, '#fff7df', '#725e42');
-        if (state.activeOvens.includes(index + 1)) {
-          roundRect(box.x + 71, box.y + 122, 156, 44, 10, '#fff1a7', '#6a3f26', 3);
-          text(`出炉了！按 ${index + 1}`, box.x + 149, box.y + 144, 20, '#7c351f', 900, 'center');
-        }
-      });
+      drawScene(ctx, imageReady ? background : null, { mapping: session.plan.mapping, condition: state.condition, activeOvens: state.activeOvens });
       drawOverlay(state, condition);
     }
-    function wrap(value, count) { const chunks = []; for (let i = 0; i < value.length; i += count) chunks.push(value.slice(i, i + count)); return chunks; }
     function drawOverlay(state, condition) {
       if (!['intro', 'practice_complete', 'block_intro', 'break', 'complete', 'aborted'].includes(state.phase)) return;
       ctx.fillStyle = '#39271580'; ctx.fillRect(0, 0, W, H);
@@ -469,7 +474,7 @@
     function inRect(p, r) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; }
     function onClick(event) {
       canvas.focus({ preventScroll: true }); const p = pointFromEvent(event), s = session.getState();
-      if (['practice', 'running'].includes(s.phase)) { const oven = OVENS.findIndex(box => inRect(p, box)); if (oven >= 0) respond(oven + 1); }
+      if (['practice', 'running'].includes(s.phase)) { const oven = ovenAt(p.x, p.y); if (oven >= 0) respond(oven + 1); }
       else if (inRect(p, { x: 465, y: 395, w: 270, h: 61 })) start();
     }
     function onKey(event) {
@@ -517,7 +522,7 @@
       getState: session.getState, getResult: session.getResult, getReadiness: () => ({ ready: imageReady, status: imageFailed ? 'error' : imageReady ? 'ready' : 'loading' }), destroy
     };
   }
-  const api = { mount, createPlan, createSession, summarize, conditions: CONDITIONS, ovens: OVENS, canvasSize: Object.freeze({ width: W, height: H }) };
+  const api = { mount, createPlan, createSession, summarize, drawScene, ovenAt, layout: LAYOUT, conditions: CONDITIONS, ovens: OVENS, canvasSize: Object.freeze({ width: W, height: H }) };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (global) global.AttentionSEEV = Object.freeze(api);
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,10 +1,10 @@
 /* Immutable release identity. Opening recruitment requires an authored code change. */
 (function (global) {
   'use strict';
-  const VERSION = 'kitchen-v1.0.0';
-  const PILOT_VERSION = 'kitchen-pilot-v1.0.0';
-  const CONSENT_VERSION = 'kitchen-formal-2026-11-08-v1';
-  const PILOT_CONSENT_VERSION = 'kitchen-pilot-2026-11-08-v1';
+  const VERSION = 'kitchen-v2.0.0';
+  const PILOT_VERSION = 'kitchen-pilot-v2.0.0';
+  const CONSENT_VERSION = 'kitchen-formal-2026-11-08-v2';
+  const PILOT_CONSENT_VERSION = 'kitchen-pilot-2026-11-08-v2';
   const recruitmentOpen = true;
   function freezeDeep(value) {
     Object.values(value).forEach(item => { if (item && typeof item === 'object') freezeDeep(item); });
@@ -15,7 +15,7 @@
       collectionMode: 'formal', protocolVersion: VERSION, consentVersion: CONSENT_VERSION,
       testOnly: false, recruitmentOpen,
       experiments: {
-        bakery: { experiment: 'seev_bakery_v1', version: 'seev-v1.0.0' },
+        bakery: { experiment: 'seev_bakery_v2', version: 'seev-v2.0.0', layoutId: 'bakery-spread-v2' },
         juice: { experiment: 'pcp_juice_v1', version: 'pcp-v1.0.0' }
       }
     },
@@ -23,7 +23,7 @@
       collectionMode: 'pilot', protocolVersion: PILOT_VERSION, consentVersion: PILOT_CONSENT_VERSION,
       testOnly: true, recruitmentOpen,
       experiments: {
-        bakery: { experiment: 'test_seev_bakery_v1', version: 'test-seev-v1.0.0' },
+        bakery: { experiment: 'test_seev_bakery_v2', version: 'test-seev-v2.0.0', layoutId: 'bakery-spread-v2' },
         juice: { experiment: 'test_pcp_juice_v1', version: 'test-pcp-v1.0.0' }
       }
     }

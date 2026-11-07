@@ -3,13 +3,15 @@
 
   var PROJECT_CODE = '8P4BGM';
   var CONSENT_VERSION = '2026-11-07.3';
-  var FORMAL_CONSENT_VERSION = 'kitchen-formal-2026-11-08-v1';
-  var PILOT_CONSENT_VERSION = 'kitchen-pilot-2026-11-08-v1';
+  var FORMAL_CONSENT_VERSION = 'kitchen-formal-2026-11-08-v2';
+  var PILOT_CONSENT_VERSION = 'kitchen-pilot-2026-11-08-v2';
   var RELEASE_EXPERIMENTS = {
-    seev_bakery_v1: { mode: 'formal', protocol: 'kitchen-v1.0.0', version: 'seev-v1.0.0', family: 'seev' },
-    pcp_juice_v1: { mode: 'formal', protocol: 'kitchen-v1.0.0', version: 'pcp-v1.0.0', family: 'pcp' },
-    test_seev_bakery_v1: { mode: 'pilot', protocol: 'kitchen-pilot-v1.0.0', version: 'test-seev-v1.0.0', family: 'seev' },
-    test_pcp_juice_v1: { mode: 'pilot', protocol: 'kitchen-pilot-v1.0.0', version: 'test-pcp-v1.0.0', family: 'pcp' }
+    seev_bakery_v1: { mode: 'formal', protocol: 'kitchen-v1.0.0', consent: 'kitchen-formal-2026-11-08-v1', version: 'seev-v1.0.0', family: 'seev' },
+    test_seev_bakery_v1: { mode: 'pilot', protocol: 'kitchen-pilot-v1.0.0', consent: 'kitchen-pilot-2026-11-08-v1', version: 'test-seev-v1.0.0', family: 'seev' },
+    seev_bakery_v2: { mode: 'formal', protocol: 'kitchen-v2.0.0', consent: FORMAL_CONSENT_VERSION, version: 'seev-v2.0.0', family: 'seev', layoutId: 'bakery-spread-v2' },
+    test_seev_bakery_v2: { mode: 'pilot', protocol: 'kitchen-pilot-v2.0.0', consent: PILOT_CONSENT_VERSION, version: 'test-seev-v2.0.0', family: 'seev', layoutId: 'bakery-spread-v2' },
+    pcp_juice_v1: { mode: 'formal', protocol: 'kitchen-v2.0.0', consent: FORMAL_CONSENT_VERSION, version: 'pcp-v1.0.0', family: 'pcp' },
+    test_pcp_juice_v1: { mode: 'pilot', protocol: 'kitchen-pilot-v2.0.0', consent: PILOT_CONSENT_VERSION, version: 'test-pcp-v1.0.0', family: 'pcp' }
   };
   var BASE_URL = 'https://attention-lab-production.up.railway.app';
   var STORAGE_KEY = 'attention-playground.stage1.session.v1';
@@ -43,10 +45,22 @@
     return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 14);
   }
 
-  function releaseConfig(name) { return Object.prototype.hasOwnProperty.call(RELEASE_EXPERIMENTS, name) ? RELEASE_EXPERIMENTS[name] : null; }
+  function protocolFor(mode, revision) { return (mode === 'pilot' ? 'kitchen-pilot-v' : 'kitchen-v') + (revision || 2) + '.0.0'; }
+  function releaseConfig(name, protocolVersion) {
+    var config = Object.prototype.hasOwnProperty.call(RELEASE_EXPERIMENTS, name) ? RELEASE_EXPERIMENTS[name] : null;
+    // The juice task itself is unchanged. Its v1 identity belongs to either
+    // whole-study protocol; archived v1 records retain their original consent.
+    if (config && config.family === 'pcp' && protocolVersion === protocolFor(config.mode, 1)) {
+      return Object.assign({}, config, { protocol: protocolVersion, consent: 'kitchen-' + config.mode + '-2026-11-08-v1' });
+    }
+    return config;
+  }
   function consentVersionFor(mode) { return mode === 'formal' ? FORMAL_CONSENT_VERSION : mode === 'pilot' ? PILOT_CONSENT_VERSION : CONSENT_VERSION; }
-  function sessionKey(mode) { return mode === 'formal' || mode === 'pilot' ? 'attention-kitchen.release.' + mode + '.session.v1' : STORAGE_KEY; }
-  function resultsKey(mode) { return mode === 'formal' || mode === 'pilot' ? 'attention-kitchen.release.' + mode + '.results.v1' : PILOT_KEY; }
+  function sessionKey(mode, revision) { return mode === 'formal' || mode === 'pilot' ? 'attention-kitchen.release.' + mode + '.session.v' + (revision || 2) : STORAGE_KEY; }
+  function resultsKey(mode, revision) { return mode === 'formal' || mode === 'pilot' ? 'attention-kitchen.release.' + mode + '.results.v' + (revision || 2) : PILOT_KEY; }
+  function inBucket(entry, mode, revision) {
+    return (entry.session.collectionMode || null) === mode && (!mode || entry.session.protocolVersion === protocolFor(mode, revision));
+  }
   function pageMode() {
     if (selectedMode !== undefined) return selectedMode;
     if (!global.location) return null;
@@ -76,7 +90,7 @@
       if (parsed && parsed.schemaVersion === 1 && parsed.project === PROJECT_CODE &&
           (parsed.collectionMode || null) === pageMode() &&
           (parsed.collectionMode ? parsed.testOnly === (parsed.collectionMode === 'pilot') &&
-            ['formal', 'pilot'].indexOf(parsed.collectionMode) >= 0 && parsed.consentVersion === consentVersionFor(parsed.collectionMode) : parsed.testOnly === true) && typeof parsed.sessionId === 'string' &&
+            ['formal', 'pilot'].indexOf(parsed.collectionMode) >= 0 && parsed.consentVersion === consentVersionFor(parsed.collectionMode) && parsed.protocolVersion === protocolFor(parsed.collectionMode) : parsed.testOnly === true) && typeof parsed.sessionId === 'string' &&
           /^[a-zA-Z0-9-]{8,100}$/.test(parsed.sessionId) &&
           validateParticipantId(parsed.participantId, parsed.collectionMode).valid &&
           typeof parsed.consentAt === 'string' && typeof parsed.consentVersion === 'string') {
@@ -149,7 +163,7 @@
       warnings: [],
       message: '编号已保存在本机，尚未发送。'
     };
-    if (mode) { memorySession.collectionMode = mode; memorySession.protocolVersion = mode === 'formal' ? 'kitchen-v1.0.0' : 'kitchen-pilot-v1.0.0'; }
+    if (mode) { memorySession.collectionMode = mode; memorySession.protocolVersion = protocolFor(mode); }
     persist();
     return copy(memorySession);
   }
@@ -385,9 +399,10 @@
   }
 
   function readStoredPilots() {
-    [null, 'formal', 'pilot'].forEach(function (mode) {
+    [{mode:null}, {mode:'formal',revision:1}, {mode:'pilot',revision:1}, {mode:'formal',revision:2}, {mode:'pilot',revision:2}].forEach(function (bucket) {
+      var mode = bucket.mode;
       try {
-        var raw = global.localStorage.getItem(resultsKey(mode));
+        var raw = global.localStorage.getItem(resultsKey(mode, bucket.revision));
         if (!raw) return;
         var stored = JSON.parse(raw);
         if (!stored || stored.schemaVersion !== 2 || !Array.isArray(stored.entries)) return;
@@ -396,22 +411,22 @@
               !entry.result || entry.result.sessionId !== entry.sessionId || typeof entry.result.runId !== 'string' ||
               !Array.isArray(entry.result.blocks) || !entry.upload) return false;
           if (!mode) return !entry.session.collectionMode && entry.result.testOnly === true && PILOT_EXPERIMENTS.indexOf(entry.result.experiment) >= 0;
-          try { validateReleaseResult(entry.result, entry.session); return entry.session.collectionMode === mode; }
+          try { validateReleaseResult(entry.result, entry.session); return inBucket(entry, mode, bucket.revision); }
           catch (_) { return false; }
         }));
-      } catch (error) { if (mode === (memorySession && memorySession.collectionMode || null)) pilotStorageAvailable = false; }
+      } catch (error) { if (mode === (memorySession && memorySession.collectionMode || null) && (!mode || bucket.revision === 2)) pilotStorageAvailable = false; }
     });
   }
 
   function persistPilots(deletedSessionId) {
     try {
       var mode = memorySession && memorySession.collectionMode || null;
-      var local = pilotEntries.filter(function (entry) { return (entry.session.collectionMode || null) === mode; });
+      var local = pilotEntries.filter(function (entry) { return inBucket(entry, mode); });
       var raw = global.localStorage.getItem(resultsKey(mode));
       var stored = raw ? JSON.parse(raw) : null;
       if (stored && stored.schemaVersion === 2 && Array.isArray(stored.entries)) stored.entries.forEach(function (remote) {
         if (!remote || !remote.session || !remote.result || !remote.upload || remote.sessionId === deletedSessionId ||
-            (remote.session.collectionMode || null) !== mode) return;
+            !inBucket(remote, mode)) return;
         var own = local.find(function (entry) { return entry.sessionId === remote.sessionId && entry.result.runId === remote.result.runId; });
         if (!own) { local.push(remote); return; }
         // Checkpoints from a stale tab must not erase another tab's completed run
@@ -422,7 +437,7 @@
           own.upload = copy(remote.upload);
         }
       });
-      pilotEntries = pilotEntries.filter(function (entry) { return (entry.session.collectionMode || null) !== mode; }).concat(local);
+      pilotEntries = pilotEntries.filter(function (entry) { return !inBucket(entry, mode); }).concat(local);
       global.localStorage.setItem(resultsKey(mode), JSON.stringify({ schemaVersion: 2, entries: local }));
       pilotStorageAvailable = true;
       return true;
@@ -435,7 +450,8 @@
   function currentEntries() {
     if (!memorySession) return [];
     return pilotEntries.filter(function (entry) {
-      return entry.sessionId === memorySession.sessionId && (entry.session.collectionMode || null) === (memorySession.collectionMode || null);
+      return entry.sessionId === memorySession.sessionId && (entry.session.collectionMode || null) === (memorySession.collectionMode || null) &&
+        (!memorySession.collectionMode || entry.result.protocolVersion === memorySession.protocolVersion && entry.session.protocolVersion === memorySession.protocolVersion);
     });
   }
 
@@ -444,10 +460,10 @@
   }
 
   function validateReleaseResult(run, participantSession) {
-    var config = run && releaseConfig(run.experiment);
+    var config = run && releaseConfig(run.experiment, run.protocolVersion);
     if (!config || participantSession.collectionMode !== config.mode || run.collectionMode !== config.mode ||
         participantSession.testOnly !== (config.mode === 'pilot') || participantSession.protocolVersion !== config.protocol ||
-        participantSession.consentVersion !== consentVersionFor(config.mode) ||
+        participantSession.consentVersion !== config.consent ||
         run.testOnly !== (config.mode === 'pilot') || typeof run.simulation !== 'boolean' ||
         run.protocolVersion !== config.protocol || run.version !== config.version ||
         !run.plan || run.plan.version !== config.version || run.plan.collectionMode !== config.mode ||
@@ -460,6 +476,17 @@
         [run.practice].concat(run.blocks || []).some(function (block) {
           return block && block.timing && /simulat|virtual/i.test(String(block.timing.onsetMethod || ''));
         }))) throw new Error('模拟或测试数据不能保存为正式结果。');
+    if (config.layoutId) {
+      var layout = run.layout, expectedOvens = [
+        {x:50,y:24,w:460,h:276}, {x:690,y:24,w:460,h:276},
+        {x:50,y:340,w:460,h:276}, {x:690,y:340,w:460,h:276}
+      ];
+      if (!layout || layout.id !== config.layoutId || run.plan.layoutId !== config.layoutId ||
+          !layout.canvas || layout.canvas.width !== 1200 || layout.canvas.height !== 640 ||
+          !Array.isArray(layout.ovens) || layout.ovens.length !== 4 || expectedOvens.some(function (expected, index) {
+            return !layout.ovens[index] || ['x', 'y', 'w', 'h'].some(function (key) { return layout.ovens[index][key] !== expected[key]; });
+          })) throw new Error('烤箱布局与本轮实验版本不一致，记录未发送。请保留备份后联系项目负责人。');
+    }
     if (!Array.isArray(run.blocks) || !Array.isArray(run.plan.blocks)) throw new Error('实验安排不完整，记录未发送。');
     var conditions = config.family === 'seev' ? ['baseline', 'value_cue'] : ['separated', 'integrated', 'task_matched'];
     var count = config.family === 'seev' ? 50 : 20, duration = config.family === 'seev' ? 85000 : 67000;
@@ -699,6 +726,7 @@
       trial.protocol_version = config.protocol;
       trial.test_only = config.mode === 'pilot';
       trial.simulation = false;
+      if (config.layoutId && trial.record_kind === 'event') trial.layout_id = config.layoutId;
       if (Object.keys(trial).length > 40) throw new Error('记录字段过多，暂未上传；请下载备份。');
     });
     return payload;
@@ -951,6 +979,19 @@
     }).map(function (entry) { return submitPilotResult(entry.result.runId); }));
   }
 
+  function getPreviousProtocolBackup() {
+    var mode = memorySession && memorySession.collectionMode || pageMode();
+    var sessions = [];
+    (mode ? [mode] : ['formal', 'pilot']).forEach(function (item) {
+      try { var old = JSON.parse(global.localStorage.getItem(sessionKey(item, 1)) || 'null'); if (old) sessions.push(old); } catch (_) {}
+    });
+    var records = pilotEntries.filter(function (entry) {
+      var entryMode = entry.session.collectionMode;
+      return entryMode && (!mode || entryMode === mode) && entry.session.protocolVersion !== protocolFor(entryMode);
+    });
+    return { exportedAt: new Date().toISOString(), archived: true, sessions: copy(sessions), records: copy(records) };
+  }
+
   readStoredSession();
   readStoredPilots();
   global.AttentionData = Object.freeze({
@@ -971,7 +1012,7 @@
       var all = getPilotResults();
       var seev = all.filter(function (item) { return /^(?:test_)?seev_/.test(item.experiment); });
       return { exportedAt: new Date().toISOString(), testOnly: memorySession ? memorySession.testOnly : true, session: copy(memorySession),
-        payload: memorySession ? buildPayload() : null, pilotResults: all,
+        payload: memorySession ? buildPayload() : null, pilotResults: all, previousProtocolArchive: getPreviousProtocolBackup(),
         seevPilot: seev.length ? seev[seev.length - 1] : null, seevPilots: seev,
         pcpPilots: all.filter(function (item) { return /^(?:test_)?pcp_/.test(item.experiment); }),
         pilotUploads: currentEntries().map(function (entry) { return { runId: entry.result.runId, upload: copy(entry.upload) }; }) };
@@ -987,6 +1028,7 @@
     getPilotUploadState: getPilotUploadState,
     getUploadState: getPilotUploadState,
     recoverPendingResults: recoverPendingResults,
+    getPreviousProtocolBackup: getPreviousProtocolBackup,
     getLegacyBackup: function () {
       var legacySession = modeSessions.legacy || (memorySession && !memorySession.collectionMode ? memorySession : null);
       if (!legacySession) { try { legacySession = JSON.parse(global.localStorage.getItem(STORAGE_KEY) || 'null'); } catch (_) {} }

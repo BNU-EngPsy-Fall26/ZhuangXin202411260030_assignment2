@@ -4,6 +4,7 @@
   'use strict';
   const script = typeof document !== 'undefined' ? document.currentScript : null;
   const base = script ? new URL('../', script.src).href : '';
+  const LAYOUT_VERSION = 'gaze-spread-20261108';
   const REGIONS = [
     { id: 'top_left', name: '左上', x0: .05, x1: .47, y0: .10, y1: .45 },
     { id: 'top_right', name: '右上', x0: .53, x1: .95, y0: .10, y1: .45 },
@@ -36,9 +37,17 @@
     const valid = rows.filter(validPrediction);
     const bins = new Set(valid.map(s => Math.floor((s.t - startMs) / binMs)));
     const hits = valid.filter(s => classify(s.x, s.y, regions) === target).length;
+    const region = regions.find(r => r.id === target);
+    // Diagnostic only: predicted gaze minus the independent target centre, in
+    // viewport fractions. Never feed validation samples back into training.
+    const meanOffset = valid.length && region ? {
+      x:valid.reduce((sum,s)=>sum+s.x,0)/valid.length-(region.x0+region.x1)/2,
+      y:valid.reduce((sum,s)=>sum+s.y,0)/valid.length-(region.y0+region.y1)/2,
+      unit:'viewport_fraction', sampleCount:valid.length
+    } : null;
     return { target, startMs, endMs, callbacks: rows.length, validSamples: valid.length, correctSamples: hits,
       areaAccuracy: valid.length ? hits / valid.length : null, coverage: bins.size / Math.ceil((endMs - startMs) / binMs),
-      validSampleRate: valid.length / ((endMs - startMs) / 1000), coverageBinMs: binMs };
+      validSampleRate: valid.length / ((endMs - startMs) / 1000), coverageBinMs: binMs, meanOffset };
   }
   function assessQuality(rows, regions = REGIONS) {
     const failures = [];
@@ -50,9 +59,75 @@
     return { passed: failures.length === 0, minAreaAccuracy: QUALITY.minAreaAccuracy, minCoverage: QUALITY.minCoverage,
       basis: 'engineering_pilot_only', scientificPassThreshold: null, failures };
   }
+  function describeValidation(report) {
+    const thresholds = {areaAccuracy:QUALITY.minAreaAccuracy,coverage:QUALITY.minCoverage};
+    const currentLayout = report?.version === 'phase2-3' && report?.layoutVersion === LAYOUT_VERSION;
+    const incomplete = {passed:false,canAssess:false,currentLayout,thresholds,rows:[],summary:'这份检查记录不完整，无法判断各区域的眼动估计质量。请重新校准并完成四个区域的检查。'};
+    if (!Array.isArray(report?.regions) || !Array.isArray(report?.validation?.rows)) return incomplete;
+    let regions;
+    try { regions = validateRegions(report.regions); } catch (_) { return incomplete; }
+    const proportion = value => Number.isFinite(value) && value >= 0 && value <= 1;
+    const pct = (value,threshold) => {
+      if (!proportion(value)) return '无法计算';
+      const rounded = Math.round(value*1000)/10;
+      return value < threshold && rounded >= threshold*100 ? '<'+threshold*100+'%' : rounded+'%';
+    };
+    const rows = regions.map(region => {
+      const matches = report.validation.rows.filter(row=>row?.target===region.id);
+      const raw = matches.length === 1 ? matches[0] : null;
+      const areaAccuracy = proportion(raw?.areaAccuracy) ? raw.areaAccuracy : null;
+      const coverage = proportion(raw?.coverage) ? raw.coverage : null;
+      const noSamples = raw?.validSamples === 0 && raw?.areaAccuracy === null && coverage === 0;
+      const missing = !raw || coverage === null || (areaAccuracy === null && !noSamples);
+      const position = areaAccuracy !== null && areaAccuracy < thresholds.areaAccuracy;
+      const sampling = coverage !== null && coverage < thresholds.coverage;
+      const failureType = missing ? 'incomplete' : position && sampling ? 'both' : position ? 'position' : sampling ? 'sampling' : 'none';
+      const failureLabel = {none:'达到检查门槛',position:'位置估计不准',sampling:'采样不足',both:'位置估计不准、采样不足',incomplete:'记录不完整'}[failureType];
+      const details = [];
+      if (position) details.push('有效视线估计落在这个区域内的比例不足60%');
+      if (sampling) details.push('有有效视线采样的时段不足60%');
+      if (noSamples) details.push('没有有效采样，无法判断位置是否估计准确');
+      if (missing) details.push('缺少可用的检查指标，不能判定通过');
+      if (failureType === 'none') details.push('命中率和采样覆盖率均达到60%');
+      return {id:region.id,name:region.name,areaAccuracy,coverage,
+        areaAccuracyText:pct(areaAccuracy,thresholds.areaAccuracy),coverageText:pct(coverage,thresholds.coverage),
+        failureType,failureLabel,detail:details.join('；')+'。'};
+    });
+    const canAssess = rows.every(row=>row.failureType!=='incomplete');
+    const failed = rows.filter(row=>row.failureType!=='none');
+    const passed = canAssess && failed.length === 0;
+    const hasPosition = failed.some(row=>row.failureType==='position'||row.failureType==='both');
+    const hasSampling = failed.some(row=>row.failureType==='sampling'||row.failureType==='both');
+    const resultText = !canAssess ? '部分区域的检查记录不完整，暂时无法判断整体眼动估计质量。' :
+      hasPosition && hasSampling ? '这次检查同时发现了位置估计不准和有效采样不足的问题，具体区域见下表。' :
+      hasSampling ? '部分区域没有获得足够的有效采样，暂时不能稳定记录眼动。' :
+      '这次采样覆盖达到了要求，但部分区域的位置估计还不够准确。';
+    const summary = passed ? '四个区域的命中率和采样覆盖率均达到60%。这只是本次设备检查的试行门槛。' :
+      resultText+'这反映的是本次设备的视线估计质量，不代表你的注意力水平。';
+    // Display diagnostics, not authorization to resume a previous session. The
+    // caller must still check the report against the current regions/viewport.
+    return {passed,canAssess,currentLayout,thresholds,rows,summary};
+  }
+  // A valid prediction coordinate must have the same CSS-pixel meaning in the
+  // child and its parent. innerWidth alone cannot reveal a transformed iframe.
+  function geometryProblem(g, baseline = null) {
+    const near = (a,b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a-b) <= 1;
+    if (!g?.parent || !g?.child || !g?.frame) return 'unavailable';
+    for (const key of ['parent','child']) {
+      const view = g[key], vv = view.visualViewport;
+      if (!(view.width > 0 && view.height > 0 && view.devicePixelRatio > 0)) return 'viewport_invalid';
+      if (!vv || !Number.isFinite(vv.scale) || Math.abs(vv.scale-1) > .001 || !near(vv.offsetLeft,0) || !near(vv.offsetTop,0) || !near(vv.width,view.width) || !near(vv.height,view.height)) return 'visual_viewport_changed';
+      if (baseline && (!near(view.width,baseline[key].width) || !near(view.height,baseline[key].height) || view.devicePixelRatio !== baseline[key].devicePixelRatio)) return 'viewport_changed';
+    }
+    if (g.frame.transformed || !near(g.frame.left,0) || !near(g.frame.top,0) ||
+      !near(g.frame.width,g.parent.width) || !near(g.frame.height,g.parent.height) ||
+      !near(g.child.width,g.parent.width) || !near(g.child.height,g.parent.height)) return 'frame_changed';
+    return null;
+  }
 
   function mount(container, options = {}) {
     if (!container || !container.appendChild) throw new Error('请提供眼动检查的显示区域。');
+    if (options.keepTracking === true && !Array.isArray(options.regions)) throw new Error('游戏眼动需要明确提供四个观察区域，不能使用默认区域。');
     const regions = validateRegions(options.regions);
     const config = { kind: 'attention-gaze-config', regions, keepTracking: options.keepTracking === true };
     let state = { status: 'ready', report: null, cameraActive: false };
@@ -110,7 +185,8 @@
       frame.style.cssText = 'width:100%;height:min(760px,calc(100vh - 120px));min-height:620px;border:0;display:block;border-radius:12px';
       normalFrameStyle = frame.style.cssText;
       frame.addEventListener('load', sendConfig, { once: true });
-      frame.src = new URL('vendor/webgazer/probe.html', base).href;
+      const frameUrl = new URL('vendor/webgazer/probe.html', base); frameUrl.searchParams.set('v', LAYOUT_VERSION);
+      frame.src = frameUrl.href;
       container.replaceChildren(frame);
     }
     function destroy() {
@@ -129,12 +205,12 @@
     let wg = null, active = true, starting = false, configured = false, keepTracking = false, regions = REGIONS;
     let watchdog = null, calibrationIndex = 0, clicks = 0, lastClick = -Infinity, lastFrame = 0, lastFaceAt = 0;
     let validationStart = 0, currentTarget = null, samples = [], validationRows = [], viewport = null, lastStreamSample = 0, trackingStart = 0;
+    let geometryTimer = null, initialGeometry = null, latestGeometry = null;
     const waits = new Map(), streams = new Set(), removers = [];
     let originalMedia = null, guardedMedia = null, pendingScript = null;
     const publish = extra => parent.postMessage({ kind: 'attention-gaze', ...(extra?.sample ? {} : { state }), timeOrigin: performance.timeOrigin, ...extra }, location.origin === 'null' ? '*' : location.origin);
     const update = patch => { state = { ...state, ...patch }; publish(); };
     const button = (label, action, secondary) => { const el = document.createElement('button'); el.textContent = label; if (secondary) el.className = 'secondary'; el.addEventListener('click', action); return el; };
-    const pct = n => n === null ? '—' : Math.round(n * 100) + '%';
     const delay = ms => new Promise(resolve => { const id = setTimeout(() => { waits.delete(id); resolve(active); }, ms); waits.set(id, resolve); });
     function listen(target, name, handler) { target.addEventListener(name, handler); removers.push(() => target.removeEventListener(name, handler)); }
     function abortError() { const e = new Error('检查已结束'); e.name = 'AbortError'; return e; }
@@ -156,7 +232,7 @@
     }
     function stop() {
       if (!active) { streams.forEach(stopStream); return; }
-      active = false; clearInterval(watchdog);
+      active = false; clearInterval(watchdog); clearInterval(geometryTimer);
       for (const [id, resolve] of waits) { clearTimeout(id); resolve(false); } waits.clear();
       removers.splice(0).forEach(remove => remove());
       if (pendingScript) { pendingScript.onload = null; pendingScript.onerror = null; pendingScript.remove(); pendingScript = null; }
@@ -187,6 +263,54 @@
       screen('这一步还没完成', '<p class="lead"></p><p class="note">摄像头已经关闭。需要重新校准，才能继续记录眼动。</p>');
       root.querySelector('.lead').textContent = message;
       actions(button('重新检查', () => publish({ restart: true })), button('结束检查', () => publish({ finished: true }), true));
+    }
+    function readGeometry() {
+      try {
+        const view = win => ({ width:win.innerWidth, height:win.innerHeight, devicePixelRatio:win.devicePixelRatio,
+          visualViewport:win.visualViewport ? { width:win.visualViewport.width, height:win.visualViewport.height,
+            scale:win.visualViewport.scale, offsetLeft:win.visualViewport.offsetLeft, offsetTop:win.visualViewport.offsetTop } :
+            { width:win.innerWidth, height:win.innerHeight, scale:1, offsetLeft:0, offsetTop:0 } });
+        const parentView = view(parent), childView = view(window), element = window.frameElement;
+        const rect = element ? element.getBoundingClientRect() : { left:0,top:0,width:innerWidth,height:innerHeight };
+        let transformed = false;
+        for (let el = element; el; el = el.parentElement) {
+          const css = parent.getComputedStyle(el);
+          if (css.transform !== 'none' || (css.zoom && Number(css.zoom) !== 1)) transformed = true;
+        }
+        return { parent:parentView, child:childView, frame:{left:rect.left,top:rect.top,width:rect.width,height:rect.height,transformed} };
+      } catch (_) { return null; }
+    }
+    function failGeometry(problem, geometry) {
+      // This is a display failure, not a failed gaze-quality measurement.
+      state = { ...state, report:null, geometryFailure:{reason:problem,layoutVersion:LAYOUT_VERSION,geometry} };
+      error('显示位置改变了，眼动记录已停止。请保持窗口和显示比例不变，再重新校准。', 'display_geometry_changed');
+      return false;
+    }
+    function ensureGeometry() {
+      if (!active || !initialGeometry) return false;
+      const geometry = readGeometry(), problem = geometryProblem(geometry, initialGeometry);
+      if (problem) return failGeometry(problem, geometry);
+      latestGeometry = geometry; return true;
+    }
+    async function waitForStableGeometry() {
+      // Parent postMessage layout is asynchronous. Require three stable readings
+      // rather than assuming the full-frame style applied within a fixed delay.
+      const deadline = performance.now() + 2000;
+      let previous = null, stable = 0, geometry = null, problem = 'unavailable';
+      while (active && performance.now() <= deadline) {
+        geometry = readGeometry(); problem = geometryProblem(geometry);
+        if (!problem) {
+          stable = previous && !geometryProblem(geometry, previous) ? stable + 1 : 1;
+          previous = geometry;
+          if (stable >= 3) {
+            initialGeometry = latestGeometry = geometry;
+            geometryTimer = setInterval(ensureGeometry, 200);
+            return true;
+          }
+        } else { stable = 0; previous = null; }
+        if (!await delay(40)) return false;
+      }
+      return active ? failGeometry(problem || 'unstable', geometry) : false;
     }
     function contextProblem(checkSize = false) {
       if (base.startsWith('file:')) return '当前是直接打开的本地文件。眼动模型需要通过网页服务加载，请先双击项目里的“启动预览.command”，再用它打开的 localhost 页面检查。';
@@ -222,11 +346,10 @@
       starting = true; update({ status: 'loading' });
       screen('先准备好摄像头', '<p class="lead">浏览器会询问是否允许使用摄像头。请允许后稍等片刻，保持脸部明亮、完整地出现在画面里。</p><p class="muted">正在加载本地眼动模型……</p>');
       actions(button('取消检查', cancel, true));
-      // Allow the parent to enlarge the frame before measuring its viewport.
-      if (!await delay(120)) return;
+      if (!await waitForStableGeometry()) return;
       const problem = contextProblem(true); if (problem) { error(problem, 'unsupported_context'); return; }
       try {
-        wg = await loadScript(); if (!active) return;
+        wg = await loadScript(); if (!ensureGeometry()) return;
         wg.params.faceMeshSolutionPath = new URL('vendor/webgazer/mediapipe/face_mesh', base).href;
         wg.saveDataAcrossSessions(false); await wg.clearData(); if (!active) return;
         const tracker = wg.getTracker(); const getEyePatches = tracker.getEyePatches.bind(tracker);
@@ -247,7 +370,7 @@
         // success; cancellation resolves pending delays and cannot reopen camera.
         let modelTimeout;
         await Promise.race([Promise.resolve(tracker.init()).then(() => { if (!active) { try { tracker.detector?.dispose(); } catch (_) {} throw abortError(); } }), new Promise((_, reject) => { modelTimeout = setTimeout(() => reject(new Error('MODEL_TIMEOUT')), 45000); removers.push(() => { clearTimeout(modelTimeout); reject(abortError()); }); })]).finally(() => clearTimeout(modelTimeout));
-        if (!active) return;
+        if (!ensureGeometry()) return;
         guardMedia(); await wg.begin(); restoreMedia();
         if (!active) { streams.forEach(stopStream); try { wg.end(); } catch (_) {} return; }
         wg.removeMouseEventListeners();
@@ -263,7 +386,7 @@
             // Missing callbacks still produce explicit invalid samples, so a
             // camera outage cannot silently look like perfectly covered data.
             if (t - lastFrame > 200) liveSample(null, t);
-            if (t - Math.max(lastFaceAt, trackingStart) > QUALITY.faceLostMs) { error('暂时看不到你的脸，眼动记录已停止。请坐回原位后重新校准。', 'face_lost'); return; }
+            if (t - Math.max(lastFaceAt, trackingStart) > QUALITY.faceLostMs) { error('暂时没有持续识别到脸部，眼动记录已停止。请检查摄像头画面后重新校准。', 'face_lost'); return; }
             if (t - Math.max(lastFrame, trackingStart) > QUALITY.predictionLostMs) { error('视线数据中断了，眼动记录已停止。请检查摄像头后重新校准。', 'prediction_lost'); return; }
           } else if (['calibrating','validating'].includes(state.status) && t - lastFrame > 8000) error('暂时没有收到摄像头画面。请检查摄像头是否被其他软件占用，再重新检查。', 'camera_stalled');
         }, 200);
@@ -279,17 +402,30 @@
       root.innerHTML = '<div class="stage"><div class="stagebar"></div></div>'; root.querySelector('.stagebar').textContent = message;
       const s = root.querySelector('.stage'); const stopButton = button('结束检查', cancel, true); stopButton.classList.add('stop'); s.appendChild(stopButton); return s;
     }
+    function ensureValidationStage(stage) {
+      const near = (a,b) => Math.abs(a-b) <= 1;
+      const r = stage.getBoundingClientRect(), box = stage.querySelector('.region.active')?.getBoundingClientRect(), star = stage.querySelector('.star')?.getBoundingClientRect();
+      const target = currentTarget;
+      if (!near(r.left,0) || !near(r.top,0) || !near(r.width,innerWidth) || !near(r.height,innerHeight) || !box || !star ||
+        !near(box.left,target.x0*innerWidth) || !near(box.top,target.y0*innerHeight) ||
+        !near(box.width,(target.x1-target.x0)*innerWidth) || !near(box.height,(target.y1-target.y0)*innerHeight) ||
+        !near(star.left+star.width/2,(target.x0+target.x1)/2*innerWidth) || !near(star.top+star.height/2,(target.y0+target.y1)/2*innerHeight)) {
+        return failGeometry('validation_stage_changed', readGeometry());
+      }
+      return true;
+    }
     const calibrationPoints = [[.1,.15],[.5,.15],[.9,.15],[.9,.5],[.5,.5],[.1,.5],[.1,.85],[.5,.85],[.9,.85]];
     async function startCalibration() {
-      if (!active) return;
-      wg.removeMouseEventListeners(); await wg.clearData(); if (!active) return;
+      if (!ensureGeometry()) return;
+      wg.removeMouseEventListeners(); await wg.clearData(); if (!ensureGeometry()) return;
       viewport = { width: innerWidth, height: innerHeight, devicePixelRatio: window.devicePixelRatio };
       update({ status: 'calibrating' }); calibrationIndex = 0; clicks = 0; lastClick = -Infinity; showCalibrationPoint();
     }
     function showCalibrationPoint() {
+      if (!ensureGeometry()) return;
       const stage = makeStage('看着圆点的中心，慢慢点击 5 次。尽量保持头部不动。'); const p = calibrationPoints[calibrationIndex];
       const target = button('', async () => {
-        if (!active || target.disabled || performance.now() - lastClick < 400) return;
+        if (!active || target.disabled || performance.now() - lastClick < 400 || !ensureGeometry()) return;
         if (!lastFaceAt || performance.now() - lastFaceAt > QUALITY.faceFreshMs) { root.querySelector('.stagebar').textContent = '暂时没看到你的脸。请面向屏幕，让脸部保持明亮。'; return; }
         root.querySelector('.stagebar').textContent = '看着圆点的中心，慢慢点击 5 次。尽量保持头部不动。'; lastClick = performance.now();
         const r = target.getBoundingClientRect(); wg.recordScreenPosition(r.left + r.width / 2, r.top + r.height / 2, 'click');
@@ -300,48 +436,56 @@
       target.innerHTML = '<span>第 ' + (calibrationIndex + 1) + ' / 9 个点 · 0 / 5</span>'; if (p[1] > .7) target.querySelector('span').style.top = '-34px'; stage.appendChild(target);
     }
     function readyValidation() {
+      if (!ensureGeometry()) return;
       wg.removeMouseEventListeners(); update({ status: 'validation_ready' });
       screen('现在检查一下，看得准不准', '<p class="lead">星星会依次出现在四个观察区域。' + (keepTracking ? '这些位置与接下来游戏中的烤箱相同。' : '') + '</p><div class="note">请只用眼睛看着星星，直到它换到下一个位置。不用移动鼠标，也不用点击。</div><p>这一步只检查校准效果，不会继续训练电脑。</p>');
       actions(button('准备好了', runValidation), button('重新校准', startCalibration, true));
     }
     async function runValidation() {
-      if (!active || state.status !== 'validation_ready') return;
+      if (!active || state.status !== 'validation_ready' || !ensureGeometry()) return;
       wg.removeMouseEventListeners(); wg.showPredictionPoints(false); wg.showVideoPreview(false);
       samples = []; validationRows = []; update({ status: 'validating' });
       for (const regionIndex of [0,3,1,2]) {
-        if (!active) return; currentTarget = regions[regionIndex];
-        const stage = makeStage('只看着星星，不用点击。');
+        if (!ensureGeometry()) return; currentTarget = regions[regionIndex];
+        const stage = makeStage(keepTracking ? '看着星星，不用点击。四个框对应接下来四台烤箱的位置。' : '只看着星星，不用点击。');
         regions.forEach(r => { const box = document.createElement('div'); box.className = 'region' + (r === currentTarget ? ' active' : ''); box.style.cssText = `left:${r.x0*100}%;top:${r.y0*100}%;width:${(r.x1-r.x0)*100}%;height:${(r.y1-r.y0)*100}%`; stage.appendChild(box); });
         const star = document.createElement('div'); star.className = 'star'; star.textContent = '★'; star.style.left = ((currentTarget.x0 + currentTarget.x1) / 2 * 100) + '%'; star.style.top = ((currentTarget.y0 + currentTarget.y1) / 2 * 100) + '%'; stage.appendChild(star);
-        validationStart = performance.now(); if (!await delay(4000)) return;
+        if (!ensureValidationStage(stage)) return;
+        validationStart = performance.now(); if (!await delay(4000) || !ensureGeometry()) return;
         validationRows.push(summarize(samples, currentTarget.id, validationStart + 1000, validationStart + 4000, 200, regions));
       }
       currentTarget = null; finish();
     }
     function finish() {
+      if (!ensureGeometry()) return;
       const quality = assessQuality(validationRows, regions);
-      const report = { type: 'four_area_feasibility', version: 'phase2-1', createdAt: new Date().toISOString(), webgazerVersion: '3.5.3', viewport, regions,
+      const report = { type: 'four_area_feasibility', version: 'phase2-3', layoutVersion:LAYOUT_VERSION,
+        geometry:{initial:initialGeometry,validated:latestGeometry}, createdAt: new Date().toISOString(), webgazerVersion: '3.5.3', viewport, regions,
         calibration: { points: 9, clicksPerPoint: 5 }, validation: { targetDurationMs: 4000, settlingExcludedMs: 1000, mouseTraining: false, rows: validationRows },
         outcome: quality.passed ? 'pilot_threshold_met' : 'pilot_threshold_not_met', quality, scientificPassThreshold: null };
+      report.diagnostics = describeValidation(report);
       if (keepTracking) {
         wg.removeMouseEventListeners(); wg.showPredictionPoints(false); wg.showVideoPreview(false); trackingStart = performance.now();
         document.documentElement.style.background = 'transparent'; document.body.style.background = 'transparent'; root.replaceChildren();
         update({ status: 'tracking', cameraActive: true, report }); publish({ trackingReady: true }); return;
       }
       stop(); update({ status: 'complete', cameraActive: false, report });
-      screen('检查完成，摄像头已关闭', '<p class="lead">下面是四个观察区域的检查结果。</p><div class="table-wrap"><table><thead><tr><th>看向哪里</th><th>识别到对应区域</th><th>有数据的时段</th></tr></thead><tbody></tbody></table></div><p class="note">每个区域的两项指标暂定都达到 60%，才可进入眼动试运行。这是工程试行门槛，不是通用科学标准，也不代表你的注意力水平。</p><p class="muted">结果只保留在本页，未上传到老师的收数页面。</p>');
-      const body = root.querySelector('tbody'); validationRows.forEach(row => { const tr = document.createElement('tr'); [regions.find(r=>r.id===row.target).name, pct(row.areaAccuracy), pct(row.coverage)].forEach(value => { const td = document.createElement('td'); td.textContent = value; tr.appendChild(td); }); body.appendChild(tr); });
-      const conclusion = document.createElement('p'); conclusion.textContent = quality.passed ? '本次达到试运行门槛；正式任务中仍需检查视线数据是否稳定。' : '本次还没有达到试运行门槛。请调整光线和坐姿，再检查一次。'; root.appendChild(conclusion);
+      screen('检查完成，摄像头已关闭', '<p class="lead">命中率是有效视线估计落在对应框内的比例；采样覆盖率是有有效数据的时段比例。</p><div class="table-wrap"><table><thead><tr><th>看向哪里</th><th>命中率</th><th>采样覆盖率</th><th>检查结果</th></tr></thead><tbody></tbody></table></div><p class="note">每个区域的两项指标暂定都达到 60%，才可进入眼动试运行。这是工程试行门槛，不是通用科学标准，也不代表你的注意力水平。</p><p class="muted">结果只保留在本页，未上传到老师的收数页面。</p>');
+      const body = root.querySelector('tbody'); report.diagnostics.rows.forEach(row => { const tr = document.createElement('tr'); [row.name, row.areaAccuracyText, row.coverageText, row.failureLabel].forEach(value => { const td = document.createElement('td'); td.textContent = value; tr.appendChild(td); }); body.appendChild(tr); });
+      const conclusion = document.createElement('p'); conclusion.textContent = report.diagnostics.summary; root.appendChild(conclusion);
       actions(button('完成检查', () => publish({ finished: true })), button('再检查一次', () => publish({ restart: true }), true));
     }
     function geometryChanged() {
-      if (active && viewport && ['calibrating','validating','validation_ready','tracking'].includes(state.status) && (viewport.width !== innerWidth || viewport.height !== innerHeight || viewport.devicePixelRatio !== window.devicePixelRatio)) error('窗口大小或显示比例变了，眼动记录已停止。请保持窗口不变，再重新校准。', 'viewport_changed');
+      if (active && initialGeometry) ensureGeometry();
     }
     function fullscreenChanged() { if (active && viewport) error('全屏状态变了，眼动记录已停止。请重新校准。', 'fullscreen_changed'); }
     listen(window, 'pagehide', stop); listen(window, 'resize', geometryChanged);
-    if (window.visualViewport) listen(window.visualViewport, 'resize', geometryChanged);
+    if (window.visualViewport) { listen(window.visualViewport, 'resize', geometryChanged); listen(window.visualViewport, 'scroll', geometryChanged); }
     listen(document, 'fullscreenchange', fullscreenChanged);
-    try { if (parent !== window) listen(parent.document, 'fullscreenchange', fullscreenChanged); } catch (_) {}
+    try { if (parent !== window) {
+      listen(parent.document, 'fullscreenchange', fullscreenChanged); listen(parent, 'resize', geometryChanged);
+      if (parent.visualViewport) { listen(parent.visualViewport, 'resize', geometryChanged); listen(parent.visualViewport, 'scroll', geometryChanged); }
+    } } catch (_) {}
     listen(document, 'visibilitychange', () => { if (document.hidden && starting) error('你离开了检查页面，摄像头已关闭。回来后请重新校准。', 'page_hidden'); });
     window.AttentionGaze.stop = stop;
     function renderReady() {
@@ -352,12 +496,15 @@
     }
     function receiveConfig(event) {
       if (!active || starting || event.source !== parent || (location.origin !== 'null' && event.origin !== location.origin) || event.data?.kind !== 'attention-gaze-config') return;
-      try { regions = validateRegions(event.data.regions); keepTracking = event.data.keepTracking === true; configured = true; renderReady(); publish(); }
+      try {
+        if (event.data.keepTracking === true && !Array.isArray(event.data.regions)) throw new Error('Missing game regions');
+        regions = validateRegions(event.data.regions); keepTracking = event.data.keepTracking === true; configured = true; renderReady(); publish();
+      }
       catch (_) { error('游戏里的观察区域还没有准备好。请返回游戏页面后重试。', 'invalid_regions'); }
     }
     listen(window, 'message', receiveConfig); configured = parent === window; renderReady(); publish({ configRequest: true });
   }
-  const api = { mount, classify, summarize, assessQuality, validateRegions, validPrediction, regions: REGIONS, qualityThresholds: QUALITY };
+  const api = { mount, classify, summarize, assessQuality, describeValidation, validateRegions, validPrediction, geometryProblem, regions: REGIONS, qualityThresholds: QUALITY };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof window !== 'undefined') { window.AttentionGaze = api; if (script?.hasAttribute('data-gaze-frame')) startChild(); }
 })();

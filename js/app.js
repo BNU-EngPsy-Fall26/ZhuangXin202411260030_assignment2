@@ -38,7 +38,7 @@
       flow=null;
       try { const saved=JSON.parse(localStorage.getItem(FLOW_KEY)); if(saved?.sessionId===sid)flow=saved; } catch (_) {}
     }
-    const runs=(data.getPilotResults?.()||[]).filter(r=>r.bundleId);
+    const runs=(data.getPilotResults?.()||[]).filter(r=>r.bundleId&&r.protocolVersion===config.protocolVersion&&Object.values(config.experiments).some(experiment=>r.experiment===experiment.experiment&&r.version===experiment.version));
     if(!flow&&runs.length){
       const last=runs[runs.length-1];
       flow={id:last.bundleId,sessionId:sid,startedAt:last.flowStartedAt||last.createdAt};
@@ -84,6 +84,14 @@
     a.href = url; a.download = '注意厨房_参与记录_' + (session().participantId || 'backup') + '.json'; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
+  function showPreviousProtocolBackup(host) {
+    const archive=data.getPreviousProtocolBackup?.();
+    if(!archive||(archive.records.length===0&&archive.sessions.length===0))return;
+    const notice=document.createElement('aside');notice.className='notice previous-records';
+    notice.innerHTML='<p>这台浏览器保留着旧版参与记录。它们不会计入这次新版任务，也不会改成新版数据。</p><button class="text-button" type="button">下载旧版记录</button>';
+    notice.querySelector('button').onclick=()=>downloadJSON(data.getPreviousProtocolBackup(),'注意厨房_旧版记录_'+Date.now()+'.json');
+    host.append(notice);
+  }
   function gameCard(type) { const g = games[type]; return '<a class="game-card" href="#' + type + '"><div class="game-cover"><img src="assets/' + g.asset + '" alt="' + (type === 'bakery' ? '小鸡点心师和四个黄色烤箱，里面放着巧克力饼干' : '小鸡店员站在黄色果汁机旁，台上摆着橙子和柠檬') + '"><span class="cover-action">看看怎么玩</span></div><span class="game-caption"><span class="game-number">' + g.number + '</span>' + g.title + '</span><span class="game-caption-sub">' + (type === 'bakery' ? '哪里需要你多看一眼？' : '分开看，还是一起看？') + '</span></a>'; }
   function home() {
     const existing = hasConsent() ? session() : null;
@@ -106,7 +114,7 @@
       if (!checked.valid) { input.setAttribute('aria-invalid','true'); error.textContent = checked.message; error.hidden = false; return; }
       const create=()=>{try { data.createSession({participantId:checked.value,consentAccepted:consentDraft,collectionMode:mode}); consentDraft=false; completed.clear(); go('ready'); } catch (err) { error.textContent=err.message; error.hidden=false; }};
       if(session()&&session().consentVersion!==config.consentVersion){
-        showModal('按新的参与说明继续','这台浏览器还留着上一版本的测试记录。你可以先下载旧备份；继续后会创建新会话，已经上传的旧记录不受影响。',[
+        showModal('按新的参与说明继续','这台浏览器还留着上一版本的参与记录。你可以先下载旧备份；继续后会创建新会话，已经上传的旧记录不受影响。',[
           {label:'先下载旧备份',action:downloadBackup,keep:true},{label:'取消',action:()=>{}},
           {label:'创建新会话',primary:true,action:()=>{try{data.clearSession();create();}catch(err){toast(err.message);}}}
         ]);return;
@@ -131,6 +139,7 @@
     const stored=data.getStorageStatus();
     el.innerHTML='<h2>编号已保存在本机</h2><p>'+(isFormal?'每项完整任务结束后，页面会自动上传并核对记录；如果没有成功，会提示重试或下载备份。':'先导记录与正式记录分开保存。完成后可以下载备份，或手动上传测试记录。')+'</p>'+(!stored.available?'<p class="field-error">'+escape(stored.message)+'</p>':'')+'<button id="backup-record" class="text-button">下载本机记录</button>';
     on('backup-record','click',downloadBackup);
+    showPreviousProtocolBackup(el);
   }
   function newPerson() {
     const s=session();const uncertain=s&&!['confirmed','warning','ready'].includes(s.status);
@@ -230,9 +239,10 @@
   }
   function closeLab(reason='user_exit') {
     if(!lab)return;const old=lab;lab=null;
+    old.cleanupGeometry?.();
     if(controller){controller.abort?.(reason);controller.destroy();controller=null;}
     if(gazeController){gazeController.destroy();gazeController=null;}
-    old.element.remove();document.body.style.overflow=old.overflow;
+    old.element.remove();document.body.style.overflow=old.overflow;if(old.htmlOverflow!==undefined)document.documentElement.style.overflow=old.htmlOverflow;
     window.removeEventListener('resize',old.onResize);window.removeEventListener('scroll',old.onScroll);
   }
   function launchLab(type,withGaze=false,retry=false) {
@@ -246,26 +256,79 @@
     if(!engine){toast('游戏文件还没有加载好，请刷新页面再试。');return;}
     const element=document.createElement('section');element.className='lab-stage';element.setAttribute('role','dialog');element.setAttribute('aria-modal','true');element.setAttribute('aria-label',games[type].title);
     element.innerHTML='<header class="lab-top"><a class="lab-brand" href="#home"><img src="assets/logo.svg" alt="">注意厨房</a><span id="lab-status">'+(isBakery?'游戏 1 / 2 · 饼干别烤焦':'游戏 2 / 2 · 果汁调配师')+'</span><button class="text-button" id="exit-lab">退出本次参与</button></header><div class="lab-playfield"><canvas id="lab-canvas" width="1200" height="640" tabindex="0" aria-label="'+games[type].title+'。'+games[type].control+'。"></canvas><div class="lab-gate" id="lab-gate" hidden></div></div><footer class="lab-controls"><p id="lab-message" role="status">先熟悉操作，再开始任务。</p><button class="button primary small" id="lab-next" disabled>准备中</button><button class="text-button" id="practice-again" hidden>再练一次</button></footer><div id="lab-gaze-holder"></div><section class="lab-results paper-panel" id="lab-results" hidden></section>';
-    const overflow=document.body.style.overflow;document.body.style.overflow='hidden';document.body.append(element);
-    lab={element,overflow,withGaze,ready:false,type,onResize:null,onScroll:null};
+    // Lock both scroll containers before measuring. Otherwise opening the gaze
+    // iframe can remove a classic scrollbar and move the already measured AOIs.
+    const overflow=document.body.style.overflow,htmlOverflow=withGaze?document.documentElement.style.overflow:undefined;
+    if(withGaze)document.documentElement.style.overflow='hidden';
+    document.body.style.overflow='hidden';document.body.append(element);
+    lab={element,overflow,htmlOverflow,withGaze,ready:false,type,onResize:null,onScroll:null};
     const canvas=element.querySelector('canvas');const field=element.querySelector('.lab-playfield');
-    const available=field.getBoundingClientRect();const width=Math.floor(Math.min(available.width,available.height*1200/640)*.9);canvas.style.width=width+'px';canvas.style.height=(width*640/1200)+'px';
+    const available=field.getBoundingClientRect();
+    // The bakery uses the available playfield, without the old decorative inset.
+    // Keep CSS pixels and the 1200×640 task coordinates tied to this same rectangle.
+    const width=Math.floor(isBakery?Math.min(available.width-8,(available.height-24)*1200/640):Math.min(available.width,available.height*1200/640)*.9);
+    canvas.style.width=width+'px';canvas.style.height=(width*640/1200)+'px';
     const initialViewport={width:innerWidth,height:innerHeight};const rect=canvas.getBoundingClientRect();
     const regions=isBakery?window.AttentionSEEV.ovens.map((r,i)=>({id:'oven_'+i,name:(i+1)+' 号烤箱',x0:(rect.left+r.x/1200*rect.width)/innerWidth,x1:(rect.left+(r.x+r.w)/1200*rect.width)/innerWidth,y0:(rect.top+r.y/640*rect.height)/innerHeight,y1:(rect.top+(r.y+r.h)/640*rect.height)/innerHeight})):null;
+    const geometryTolerance=1;
+    function readGeometry(){
+      const r=canvas.getBoundingClientRect(),v=window.visualViewport;
+      return {canvas:{left:r.left,top:r.top,width:r.width,height:r.height},width:innerWidth,height:innerHeight,dpr:devicePixelRatio,
+        visual:v?{width:v.width,height:v.height,offsetLeft:v.offsetLeft,offsetTop:v.offsetTop,scale:v.scale}:null};
+    }
+    const calibrationGeometry=withGaze?readGeometry():null;
+    let geometryObserver=null,geometryTimer=null,geometryStopped=false,gazeGeometryRequired=withGaze;
+    function near(a,b,tolerance=geometryTolerance){return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<=tolerance;}
+    function geometryMatches(){
+      const current=readGeometry(),expected=calibrationGeometry;
+      if(!expected||!near(current.width,expected.width)||!near(current.height,expected.height)||!near(current.dpr,expected.dpr,.001))return false;
+      if(!['left','top','width','height'].every(key=>near(current.canvas[key],expected.canvas[key])))return false;
+      if(Boolean(current.visual)!==Boolean(expected.visual))return false;
+      return !current.visual||(['width','height','offsetLeft','offsetTop'].every(key=>near(current.visual[key],expected.visual[key]))&&near(current.visual.scale,expected.visual.scale,.001));
+    }
+    function cleanupGeometry(){
+      geometryStopped=true;clearInterval(geometryTimer);geometryTimer=null;geometryObserver?.disconnect();geometryObserver=null;
+      window.visualViewport?.removeEventListener('resize',checkGazeGeometry);window.visualViewport?.removeEventListener('scroll',checkGazeGeometry);
+    }
+    function checkGazeGeometry(){
+      if(!gazeGeometryRequired)return true;
+      if(geometryStopped||!lab||lab.element!==element)return false;
+      if(geometryMatches())return true;
+      stopWithReason('display_geometry_changed','显示位置改变了，这次校准已停止。请返回后重新校准，并保持窗口大小和显示比例不变。');return false;
+    }
+    function reportMatchesGeometry(report){
+      const viewport=report?.viewport,reported=report?.regions;
+      if(!viewport||!near(viewport.width,calibrationGeometry.width)||!near(viewport.height,calibrationGeometry.height)||!near(viewport.devicePixelRatio,calibrationGeometry.dpr,.001)||!Array.isArray(reported)||reported.length!==regions.length)return false;
+      if(new Set(reported.map(r=>r?.id)).size!==regions.length)return false;
+      return regions.every(expected=>{
+        const actual=reported.find(r=>r?.id===expected.id);if(!actual)return false;
+        return ['x0','x1','y0','y1'].every(key=>Number.isFinite(actual[key])&&near(actual[key]*(key[0]==='x'?calibrationGeometry.width:calibrationGeometry.height),expected[key]*(key[0]==='x'?calibrationGeometry.width:calibrationGeometry.height)));
+      });
+    }
     const backToIntro=()=>isBakery?bakeryIntro():juiceIntro();
     function stopWithReason(reason,message){
       if(!lab||lab.element!==element)return;
+      lab.cleanupGeometry?.();
       if(controller?.getState().phase!=='aborted')controller?.abort?.(reason);
       gazeController?.destroy();gazeController=null;
       const gate=element.querySelector('#lab-gate');gate.hidden=false;
       gate.innerHTML='<div><h2>这一轮已结束</h2><p>'+escape(message)+'</p><p>已完成的部分会保留。请返回后重新开始。</p><button class="button yellow" id="return-from-abort">返回说明</button></div>';
       element.querySelector('#lab-next').disabled=true;element.querySelector('#return-from-abort').onclick=()=>{closeLab(reason);backToIntro();};
     }
-    lab.onResize=()=>{if(controller?.getState().phase==='complete')return;if(innerWidth!==initialViewport.width||innerHeight!==initialViewport.height)stopWithReason('viewport_changed','窗口大小改变了，原来的显示位置已经不同。');};
+    lab.onResize=()=>{if(controller?.getState().phase==='complete')return;if(gazeGeometryRequired){checkGazeGeometry();return;}if(innerWidth!==initialViewport.width||innerHeight!==initialViewport.height)stopWithReason('viewport_changed','窗口大小改变了，原来的显示位置已经不同。');};
     lab.onScroll=()=>{};window.addEventListener('resize',lab.onResize);window.addEventListener('scroll',lab.onScroll);
+    if(withGaze){
+      lab.cleanupGeometry=cleanupGeometry;
+      if(typeof ResizeObserver==='function'){geometryObserver=new ResizeObserver(checkGazeGeometry);geometryObserver.observe(canvas);geometryObserver.observe(field);}
+      // Transforms do not trigger ResizeObserver. Check them during calibration
+      // as well as tracking; the initial AOIs must remain valid throughout.
+      geometryTimer=setInterval(checkGazeGeometry,200);
+      window.visualViewport?.addEventListener('resize',checkGazeGeometry);window.visualViewport?.addEventListener('scroll',checkGazeGeometry);
+    }
     element.querySelector('#exit-lab').onclick=()=>{closeLab('user_exit');backToIntro();};
     function mountExperiment(report){
       if(!lab||lab.element!==element)return;
+      if(!report?.quality?.passed){gazeGeometryRequired=false;cleanupGeometry();}
       lab.ready=true;lab.report=report;element.querySelector('#lab-gate').hidden=true;
       element.querySelector('#lab-status').textContent=(isBakery?'游戏 1 / 2 · ':'游戏 2 / 2 · ')+(report?.quality?.passed?'眼动记录已开启':isBakery?'仅记录操作':'果汁调配师');
       controller=engine.mount(canvas,protocol.getEngineOptions(mode,{
@@ -281,6 +344,7 @@
         onCheckpoint:result=>{try{saveRun(result);}catch(err){toast('暂时无法保存本机记录，请在结束后下载备份。');}},
         onComplete:result=>{
           if(!lab||lab.element!==element)return;
+          lab.cleanupGeometry?.();
           gazeController?.destroy();gazeController=null;let stored;
           try{stored=saveRun(result);}catch(err){stored={saved:false,result};toast(err.message);}
           completed.add(type);finishFlowRun(type,stored.result);controller?.destroy();canvas.tabIndex=-1;
@@ -294,24 +358,30 @@
           panel.querySelector('#continue-flow').onclick=()=>{closeLab();go(isBakery&&!bothDone?'juice':'results');};panel.scrollTop=0;panel.querySelector('#continue-flow').focus({preventScroll:true});
         }
       }));
-      element.querySelector('#lab-next').onclick=()=>{controller?.start();canvas.focus({preventScroll:true});};
-      element.querySelector('#practice-again').onclick=()=>{controller?.repeatPractice();canvas.focus({preventScroll:true});};
+      element.querySelector('#lab-next').onclick=()=>{if(withGaze&&!checkGazeGeometry())return;controller?.start();canvas.focus({preventScroll:true});};
+      element.querySelector('#practice-again').onclick=()=>{if(withGaze&&!checkGazeGeometry())return;controller?.repeatPractice();canvas.focus({preventScroll:true});};
       canvas.focus({preventScroll:true});
     }
     if(!withGaze){mountExperiment({type:'behavior_only',quality:{passed:false,reason:'camera_not_enabled'},viewport:initialViewport});return;}
     gazeController=window.AttentionGaze.mount(element.querySelector('#lab-gaze-holder'),{
       keepTracking:true,regions,
-      onSample:sample=>{if(lab?.ready)controller?.recordGazeViewport(sample);},
+      onSample:sample=>{if(lab?.ready&&checkGazeGeometry())controller?.recordGazeViewport(sample);},
       onReady:report=>{
         if(!lab||lab.element!==element)return;
+        if(!checkGazeGeometry())return;
+        if(!reportMatchesGeometry(report)){stopWithReason('display_geometry_changed','显示位置与这次校准记录不一致，这次校准已停止。请返回后重新校准。');return;}
         if(report.quality?.passed){mountExperiment(report);return;}
         gazeController?.destroy();gazeController=null;
         const gate=element.querySelector('#lab-gate');gate.hidden=false;
-        gate.innerHTML='<div><h2>这次还不能准确区分四台烤箱</h2><p>可以调整光线和坐姿后重新校准，或只完成操作部分。未通过的眼动记录不会用于热图和分析。</p><div class="form-actions"><button class="button primary" id="recalibrate">重新校准</button><button class="button" id="behavior-after-gaze">只完成操作部分</button></div></div>';
+        const diagnostic=window.AttentionGaze.describeValidation(report);
+        const rows=diagnostic.rows.map(row=>'<tr><th scope="row">'+escape(row.name)+'</th><td>'+escape(row.areaAccuracyText)+'</td><td>'+escape(row.coverageText)+'</td><td>'+escape(row.failureLabel)+'</td></tr>').join('');
+        gate.innerHTML='<div class="gaze-check-result"><h2>这次眼动检查还没有通过</h2><p>'+escape(diagnostic.summary)+'</p><p>可以重新校准，或只完成操作部分。未通过的眼动记录不会用于热图和分析。</p><div class="form-actions"><button class="button primary" id="recalibrate">重新校准</button><button class="button" id="behavior-after-gaze">只完成操作部分</button></div><details class="gaze-check-details"><summary>查看四个区域的检查结果</summary><div class="table-wrap"><table class="result-table"><thead><tr><th scope="col">区域</th><th scope="col">命中率</th><th scope="col">采样覆盖率</th><th scope="col">检查结果</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="field-hint">命中率：看着星星时，视线估计落在对应框里的比例。采样覆盖率：检查时段里有有效记录的比例。每个区域的两项都需达到 60%。</p><button class="text-button" id="download-gaze-check">下载本次检查记录</button></details></div>';
+        gate.querySelector('#download-gaze-check').onclick=()=>downloadJSON({recordKind:'calibration_diagnostic',isExperimentalResult:false,protocolVersion:config.protocolVersion,layoutId:window.AttentionSEEV.layout?.id||'bakery-spread-v2',report},'注意厨房_眼动检查_'+Date.now()+'.json');
         element.querySelector('#recalibrate').onclick=()=>launchLab('bakery',true,true);
         element.querySelector('#behavior-after-gaze').onclick=()=>mountExperiment({...report,quality:{...report.quality,passed:false},behaviorOnly:true});
       },
       onError:(err,state)=>{
+        if((state?.errorCode||err?.code)==='display_geometry_changed'){stopWithReason('display_geometry_changed','显示位置改变了，这次校准已停止。请返回后重新校准，并保持窗口大小和显示比例不变。');return;}
         if(lab?.ready){stopWithReason('gaze_lost',state?.error||err?.message||'眼动记录中断了，请调整设备后重新开始。');return;}
         if(lab?.element!==element)return;
         const gate=element.querySelector('#lab-gate');gate.hidden=false;
@@ -344,6 +414,7 @@
     document.querySelectorAll('[data-nav]').forEach(a=>{if(a.dataset.nav===currentRoute)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
     if(isFormal&&!config.recruitmentOpen&&!['home','about','results'].includes(currentRoute)){recruitmentNotice();main.focus();return;}
     if(currentRoute==='home')home();else if(currentRoute==='consent')consent();else if(currentRoute==='entry')entry();else if(currentRoute==='ready')ready();else if(currentRoute==='bakery')bakeryIntro();else if(currentRoute==='juice')juiceIntro();else if(currentRoute==='gaze')gaze();else if(currentRoute==='results')combinedResults();else about();
+    if(currentRoute==='home')showPreviousProtocolBackup(main);
     recoverUploads();window.scrollTo(0,0);main.focus({preventScroll:true});
   }
   document.querySelector('.skip-link').addEventListener('click',e=>{e.preventDefault();main.focus();main.scrollIntoView();});

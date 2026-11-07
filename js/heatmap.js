@@ -1,6 +1,7 @@
 /* Descriptive webcam-gaze density plots. No fixation detection or missing-data imputation. */
 (function (global) {
   'use strict';
+  const BAKERY = global.AttentionSEEV || (typeof require === 'function' ? require('./seev.js') : null);
   const WIDTH = 1200, HEIGHT = 640, BIN_MS = 100, MIN_COVERAGE = 0.6;
   const CONDITIONS = [
     { id: 'baseline', title: '普通界面' },
@@ -10,6 +11,18 @@
     { x: 201, y: 57, w: 296, h: 222 }, { x: 501, y: 57, w: 296, h: 222 },
     { x: 201, y: 283, w: 296, h: 222 }, { x: 501, y: 283, w: 296, h: 222 }
   ];
+  const LEGACY_LAYOUT = Object.freeze({ id: 'bakery-compact-v1', canvas: Object.freeze({ width: WIDTH, height: HEIGHT }), ovens: OVENS });
+  function resolveLayout(result) {
+    if (!result) return null;
+    const supplied = result.layout, planned = result.plan?.layoutId;
+    const isV2 = ['seev_bakery_v2', 'test_seev_bakery_v2'].includes(result.experiment);
+    if (!supplied && !planned) return isV2 ? null : LEGACY_LAYOUT;
+    const layout = supplied?.id === 'bakery-spread-v2' ? BAKERY?.layout : supplied?.id === LEGACY_LAYOUT.id ? LEGACY_LAYOUT : null;
+    if (!layout || (isV2 && layout.id !== 'bakery-spread-v2') || (planned && planned !== layout.id)) return null;
+    if (supplied.canvas?.width !== WIDTH || supplied.canvas?.height !== HEIGHT || !Array.isArray(supplied.ovens) || supplied.ovens.length !== 4) return null;
+    if (!layout.ovens.every((oven, i) => ['x','y','w','h'].every(key => supplied.ovens[i]?.[key] === oven[key]))) return null;
+    return layout;
+  }
   const PALETTE = [
     [49, 107, 170], [34, 164, 164], [117, 185, 107], [245, 218, 80], [237, 139, 61], [209, 60, 48]
   ];
@@ -19,7 +32,8 @@
   }
   function resultReason(result) {
     if (!result) return '还没有烤箱实验的眼动记录。完成设备检查和烤箱任务后，再来查看。';
-    if (!['seev_bakery_stage2', 'seev_bakery_stage3', 'seev_bakery_v1', 'test_seev_bakery_v1'].includes(result.experiment)) return '这里仅显示烤箱实验的眼动记录。果汁实验不采集眼动。';
+    if (!['seev_bakery_stage2', 'seev_bakery_stage3', 'seev_bakery_v1', 'test_seev_bakery_v1', 'seev_bakery_v2', 'test_seev_bakery_v2'].includes(result.experiment)) return '这里仅显示烤箱实验的眼动记录。果汁实验不采集眼动。';
+    if (!resolveLayout(result)) return '这份记录的场景布局信息缺失或不匹配，因此不生成热图。原记录仍可导出。';
     if (result.status !== 'complete' || result.completed !== true || result.aborted === true) return '这轮烤箱任务没有完整完成，因此不生成热图。部分记录仍可导出。';
     if (!calibrationPassed(result.gazeValidation)) return '这轮眼动没有通过校准检查，因此不生成热图；操作记录仍会按实际情况保留。';
     return null;
@@ -98,7 +112,7 @@
     });
     const max = panels.reduce((value, panel) => Math.max(value, panel.density?.max || 0), 0);
     return {
-      width: WIDTH, height: HEIGHT, panels, max, simulation: result?.simulation === true,
+      width: WIDTH, height: HEIGHT, layout: resolveLayout(result), panels, max, simulation: result?.simulation === true,
       mapping: result?.plan?.mapping || [], runId: result?.runId || null,
       units: 'valid_points_per_second_per_cell', normalization: 'Each condition is divided by its own elapsed seconds; one shared color maximum across all available conditions.',
       noInference: 'Descriptive estimated-gaze density; not fixation detection or evidence of improvement.'
@@ -153,6 +167,7 @@
     methods.appendChild(element('p', '', '每 100 毫秒最多保留一个有效估计点，剔除无效、过期和场景外的点，不补造缺失记录。密度除以本段实际秒数，两个条件使用相同色标，任务时长不同时也能比较。'));
     methods.appendChild(element('p', '', '画布为 1200 × 640 逻辑像素，网格为 16 × 16 像素，并使用高斯平滑（标准差 32 像素）呈现分布。这里没有识别精确注视点。浅色不代表完全没看过，透明处表示没有可绘制的点。'));
     methods.appendChild(element('p', '', '果汁任务不采集眼动，因此没有对应热图。'));
+    if(model.layout)methods.appendChild(element('p', '', model.layout.id==='bakery-spread-v2'?'本图使用新版四炉分散布局；旧版记录仍按当时的布局显示。':'这份记录来自旧版紧凑布局，背景与位置保持原样。'));
     root.appendChild(methods);
     const download = element('button', '', '下载当前条件图片'); download.type = 'button'; download.addEventListener('click', () => { downloadCurrent(); });
     const actions = element('div', 'heatmap-control'), status = element('p', 'heatmap-note'); status.setAttribute('role', 'status'); actions.appendChild(download); root.append(actions, status);
@@ -167,6 +182,9 @@
       ctx.beginPath(); ctx.roundRect(x, y, w, h, radius); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
     }
     function scene(panel) {
+      if(model.layout.id==='bakery-spread-v2') {
+        BAKERY.drawScene(ctx,loaded?background:null,{mapping:model.mapping,condition:panel.id,activeOvens:[]});
+      } else {
       ctx.clearRect(0, 0, WIDTH, HEIGHT); ctx.fillStyle = '#ffedb1'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
       if (loaded) ctx.drawImage(background, 0, 0, 960, HEIGHT);
       ctx.fillStyle = '#fff9e7'; ctx.fillRect(960, 0, 240, HEIGHT);
@@ -186,6 +204,7 @@
           box(oven.x + 143, oven.y + 55, 88, 29, '#fff7df'); text(factor.value === 'high' ? '漏掉 −5' : '漏掉 −1', oven.x + 187, oven.y + 69.5, 14, '#725e42', 'center');
         }
       });
+      }
       const density = panel.density, layer = doc.createElement('canvas'); layer.width = density.columns; layer.height = density.rows;
       const layerCtx = layer.getContext('2d'), pixels = layerCtx.createImageData(density.columns, density.rows);
       for (let i = 0; i < density.grid.length; i++) pixels.data.set(colorForValue(density.grid[i], model.max), i * 4);
@@ -210,7 +229,7 @@
         const output = doc.createElement('canvas'); output.width = WIDTH; output.height = HEIGHT + 205;
         const out = output.getContext('2d'); out.fillStyle = '#fff9e7'; out.fillRect(0, 0, output.width, output.height); out.drawImage(canvas, 0, 0);
         out.fillStyle = '#29251f'; out.font = '700 24px "PingFang SC",system-ui,sans-serif';
-        out.fillText(`注意厨房 · ${panel.title} · ${model.simulation ? '模拟数据' : '摄像头眼动估计'}`, 30, HEIGHT + 40);
+        out.fillText(`注意厨房 · ${panel.title} · ${model.simulation ? '模拟数据' : '摄像头眼动估计'} · ${model.layout.id==='bakery-spread-v2'?'新版布局':'旧版布局'}`, 30, HEIGHT + 40);
         const gradient = out.createLinearGradient(30, 0, 320, 0); PALETTE.forEach((rgb, i) => gradient.addColorStop(i / (PALETTE.length - 1), `rgb(${rgb.join(',')})`));
         out.fillStyle = gradient; out.fillRect(30, HEIGHT + 61, 290, 18); out.fillStyle = '#29251f'; out.font = '17px "PingFang SC",system-ui,sans-serif';
         out.fillText(`0 — ${model.max.toPrecision(3)} 有效点 / 秒 / 网格；所有条件共用色标`, 340, HEIGHT + 77);
@@ -226,7 +245,7 @@
     render();
     return { destroy() { destroyed = true; background.onload = null; background.onerror = null; root.remove(); }, getDensity: () => model, downloadCurrent };
   }
-  const api = { mount, buildDensity, densityForBlock, validPoints, colorForValue, canvasSize: Object.freeze({ width: WIDTH, height: HEIGHT }) };
+  const api = { mount, resolveLayout, buildDensity, densityForBlock, validPoints, colorForValue, canvasSize: Object.freeze({ width: WIDTH, height: HEIGHT }) };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (global) global.AttentionHeatmap = Object.freeze(api);
 })(typeof window !== 'undefined' ? window : globalThis);
