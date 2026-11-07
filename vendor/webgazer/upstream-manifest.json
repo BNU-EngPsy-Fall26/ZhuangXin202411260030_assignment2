@@ -1,0 +1,177 @@
+{
+  "repository": "https://github.com/brownhci/WebGazer",
+  "commit": "b12701dd7b6d7b00d4b8dbebf87fdec840c24999",
+  "version": "3.5.3",
+  "files": [
+    {
+      "path": "LICENSE.md",
+      "size": 717,
+      "gitBlobSha1": "1d69d9415512bfc782fe80efd7474d4fc07bb724"
+    },
+    {
+      "path": "README.md",
+      "size": 5863,
+      "gitBlobSha1": "d075e5b9a87e1e1d39405df7b78a49d2ba47a16b"
+    },
+    {
+      "path": "gplv3.md",
+      "size": 34940,
+      "gitBlobSha1": "85c7c6967647e2e085d7fb803c38695d049bc3e2"
+    },
+    {
+      "path": "package-lock.json",
+      "size": 202034,
+      "gitBlobSha1": "aab3ca3c18ebf86a6aac92734ecc641e05a997b2"
+    },
+    {
+      "path": "package.json",
+      "size": 1051,
+      "gitBlobSha1": "7909f31eab1edb883c3be45edd036a92f4eec3cc"
+    },
+    {
+      "path": "src/dom_util.mjs",
+      "size": 866,
+      "gitBlobSha1": "ffa790191b40a236f46049472534e9ec6105ac15"
+    },
+    {
+      "path": "src/facemesh.mjs",
+      "size": 5840,
+      "gitBlobSha1": "3676035ce3cb554d3755c40cdca4ef569769c542"
+    },
+    {
+      "path": "src/index.mjs",
+      "size": 36343,
+      "gitBlobSha1": "aff6a5356f78a0322a79bcc82eaf739b0e020b3e"
+    },
+    {
+      "path": "src/mat.mjs",
+      "size": 12981,
+      "gitBlobSha1": "2957c5de3830d884fcd86e5c8aca23b6bd542688"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/README.md",
+      "size": 379,
+      "gitBlobSha1": "a9a622d9370e11b68e85b0ddc52e99d8729d363d"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh.binarypb",
+      "size": 939,
+      "gitBlobSha1": "5151beb521b0945d5866d1f9ac7c578082464d43"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh.js",
+      "size": 64913,
+      "gitBlobSha1": "869a3bc3c1e8b3a63025445b6cfd067a74d51f86"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh_solution_packed_assets.data",
+      "size": 3986256,
+      "gitBlobSha1": "855522fa60cd7c75654925370f11c144e6a9c5ea"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh_solution_packed_assets_loader.js",
+      "size": 8928,
+      "gitBlobSha1": "6a0a65b212505276f6e27e1af7acef9b3054dda8"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.data",
+      "size": 0,
+      "gitBlobSha1": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.js",
+      "size": 330166,
+      "gitBlobSha1": "e019722ec201725a765520e225a17877d14ecd9c"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh_solution_simd_wasm_bin.wasm",
+      "size": 6161697,
+      "gitBlobSha1": "41f7701041a01afe2411d47a44dc8b77f8c8601b"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh_solution_wasm_bin.js",
+      "size": 330161,
+      "gitBlobSha1": "e1ec8ba5ce7fa22aa39a299113eaedc695172d39"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/face_mesh_solution_wasm_bin.wasm",
+      "size": 6084312,
+      "gitBlobSha1": "fc24e02944e559bf5a6938047b06ef3e098a0819"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/index.d.ts",
+      "size": 6383,
+      "gitBlobSha1": "1f212b016d542df89d71376538bb2f8d756da1e4"
+    },
+    {
+      "path": "src/mediapipe/face_mesh/package.json",
+      "size": 664,
+      "gitBlobSha1": "41fadb26a67dd450ace1348f7fb5de28693f23d7"
+    },
+    {
+      "path": "src/params.mjs",
+      "size": 1027,
+      "gitBlobSha1": "829eec456cf8e9b5b024217362e7db72772b8be9"
+    },
+    {
+      "path": "src/pupil.mjs",
+      "size": 4906,
+      "gitBlobSha1": "29cf4d264196e1ed78627e6a19e1064744dee726"
+    },
+    {
+      "path": "src/ridgeReg.mjs",
+      "size": 2775,
+      "gitBlobSha1": "ee64e16f2feee137cc055e3551040aefdb2f8bb4"
+    },
+    {
+      "path": "src/ridgeRegThreaded.mjs",
+      "size": 5084,
+      "gitBlobSha1": "62825c3d840eb7c0a7c556ac805b43ad9075ec95"
+    },
+    {
+      "path": "src/ridgeWeightedReg.mjs",
+      "size": 4061,
+      "gitBlobSha1": "efb2dd4709cd6797425de7462f7927629eed83e8"
+    },
+    {
+      "path": "src/ridgeWorker.mjs",
+      "size": 4696,
+      "gitBlobSha1": "fc50e2e59d43edf5fba2a6e3050fd37abdb64528"
+    },
+    {
+      "path": "src/util.mjs",
+      "size": 12002,
+      "gitBlobSha1": "f35e45720d00e3e38014f9f6790644afb9a4d742"
+    },
+    {
+      "path": "src/util_regression.mjs",
+      "size": 8507,
+      "gitBlobSha1": "3c6f10db70e5974357ee5e487d32db7dbc69a545"
+    },
+    {
+      "path": "src/worker_scripts/mat.js",
+      "size": 14625,
+      "gitBlobSha1": "7b899bc0b8823c86f1ca86f5d4a3bd060a7ee2c8"
+    },
+    {
+      "path": "src/worker_scripts/util.js",
+      "size": 16026,
+      "gitBlobSha1": "3df056748ac89312c3943fc74248cdfb66ca6776"
+    },
+    {
+      "path": "webpack.config.js",
+      "size": 2448,
+      "gitBlobSha1": "9242fa00a52c8fb7fba8d299dc48760f87cf112f"
+    },
+    {
+      "path": "www/webgazer.js",
+      "size": 1895169,
+      "gitBlobSha1": "2305fbab2958947de81abd2ed867c2d02eac7747"
+    },
+    {
+      "path": "www/webgazer.js.map",
+      "size": 16003694,
+      "gitBlobSha1": "4aa3739b5f2b7f6079f73539a4e21c810a866d11"
+    }
+  ]
+}
