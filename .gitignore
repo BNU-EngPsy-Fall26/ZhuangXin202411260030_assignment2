@@ -1,0 +1,32 @@
+# Local settings and credentials
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*download-secret*
+*download_secret*
+.secrets/
+private/
+
+# Participant exports, local backups and test output
+exports/
+participant-data/
+raw-data/
+backups/
+注意厨房_*.json
+注意厨房_*.csv
+*.zip
+*.log
+output/
+playwright-report/
+test-results/
+docs/*screenshots/
+
+# Dependencies and caches
+node_modules/
+__pycache__/
+*.pyc
+.cache/
+.tmp/
