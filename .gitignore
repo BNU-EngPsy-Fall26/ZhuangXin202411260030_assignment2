@@ -30,3 +30,6 @@ __pycache__/
 *.pyc
 .cache/
 .tmp/
+
+final_data*.json
+hw2_*.json
