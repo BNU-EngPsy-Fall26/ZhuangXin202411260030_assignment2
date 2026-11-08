@@ -1,4 +1,5 @@
 # 注意厨房：实验设计、数据分析与结论
+- 数据来源：课程服务器导出；逐试次原始文件不随公开仓库发布
 
 | 实验模块 | 理论来源 | 设计概览 |
 |---|---|---|
@@ -7,8 +8,10 @@
 
 - 在线实验：<https://bnu-engpsy-fall26.github.io/ZhuangXin202411260030_assignment2/>
 - GitHub 仓库：<https://github.com/BNU-EngPsy-Fall26/ZhuangXin202411260030_assignment2>
+- 收数前预测快照：[commit `335e586`](https://github.com/BNU-EngPsy-Fall26/ZhuangXin202411260030_assignment2/commit/335e586d79bca6ba4f8faa0f8490789979ce9916)
 - 正式协议：`kitchen-v2.0.0`
-- 数据导出：`hw2_8P4BGM_2026-11-08_194823.json`
+- 课程项目码：`8P4BGM`
+- 分析数据：本报告固定使用 2026-11-08 19:48 导出的 14 个完整匿名样本；后续新增记录不纳入本报告。逐试次原始导出仅本地保存，公开仓库仅提供群体汇总文件 [`analysis_summary_public.json`](analysis_summary_public.json)。
 
 ## 结果摘要
 
