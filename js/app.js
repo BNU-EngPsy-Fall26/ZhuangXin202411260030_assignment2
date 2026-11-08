@@ -405,15 +405,22 @@
   function about(){
     main.innerHTML='<div class="page-head"><div><h1>怎么玩，记录会用在哪里？</h1><p>工程心理学课程作业 · 匿名参与</p></div></div><article class="paper-panel prose"><h2>一次校准，两个小游戏</h2><ol><li>阅读参与说明，填写或生成匿名编号。</li><li>校准摄像头，先练习，再照看两段烤箱；每段 85 秒。</li><li>摄像头关闭后，完成果汁练习与三段任务；每段 20 杯。</li><li>每项任务完成后保存记录，最后查看两项结果与烤箱眼动热图。</li></ol><p>一次校准顺利时，整套流程约 9 分钟。重新校准、重做练习或自行休息会延长时间。</p><h2>关于数据</h2><p>'+(isFormal?'每项完整任务会自动发送逐次反应、匿名编号、同意信息和眼动区域汇总，并回读核验。':'先导记录由你选择是否上传，始终带有测试标记。')+'视频不录制、不上传；原始视线坐标只留在本机，用于热图和备份。中途退出的任务不会自动上传。</p><details><summary>两个游戏对应什么实验？</summary><p>烤箱参考 Horrey、Wickens 与 Consalus（2006）的 SEEV 视觉分配研究，保留多源监控、频率和价值，比较普通与价值提示界面。厨房场景是机制层面的改编，不是原驾驶实验的逐项复刻。</p><p>果汁参考 Wickens 与 Andre（1990）及 Wickens 与 Carswell（1995）的邻近兼容研究，比较单项判断与双项比较在不同显示下的表现。分开、共框、按任务提示构成三种条件；按任务提示是本项目的待检验改进。原研究不能简化为“靠得近就一定更好”。</p></details><details><summary>热力图能说明什么？</summary><p>它显示烤箱正式任务中有效视线估计的位置分布。两个条件使用相同色标；摄像头检查或任务覆盖不足时不画图。普通摄像头不能精确测量每次注视，热图不能单独证明设计更好，也不用于评价个人能力。果汁游戏不采眼动。</p></details><details><summary>为什么中途切换页面会结束任务？</summary><p>后台页面可能暂停绘制，窗口变化会改变眼动坐标。中断时保存已完成部分，重新开始会创建新记录。</p></details><h2>参考文献</h2><p><a href="https://doi.org/10.1037/1076-898X.12.2.67" target="_blank" rel="noopener">Horrey 等（2006）：视觉注意分配</a><br><a href="https://doi.org/10.1177/001872089003200105" target="_blank" rel="noopener">Wickens 与 Andre（1990）：显示与信息整合</a><br><a href="https://doi.org/10.1518/001872095779049408" target="_blank" rel="noopener">Wickens 与 Carswell（1995）：邻近兼容原则</a></p><a class="button primary" href="#'+(hasConsent()?'ready':'consent')+'">开始参与</a></article>';
   }
+  function analysis(){
+    if(!window.AttentionAnalysis){
+      main.innerHTML=`<section class="paper-panel"><h1>研究结果暂时无法显示</h1><p>请刷新页面后重试。</p></section>`;
+      return;
+    }
+    main.innerHTML=window.AttentionAnalysis.render();
+  }
   function render(){
     closeLab('navigation');if(controller){controller.destroy();controller=null;}if(gazeController){gazeController.destroy();gazeController=null;}
-    const routes=['home','consent','entry','ready','bakery','juice','gaze','about','results'];
+    const routes=['home','consent','entry','ready','bakery','juice','gaze','about','results','analysis'];
     const requested=location.hash.slice(1)||'home';currentRoute=routes.includes(requested)?requested:'home';
     document.body.dataset.route=currentRoute;
-    document.title=(games[currentRoute]?games[currentRoute].title:'注意厨房')+' — 来玩两个小游戏';
+    document.title=currentRoute==='analysis'?'研究结果 — 注意厨房':(games[currentRoute]?games[currentRoute].title:'注意厨房')+' — 来玩两个小游戏';
     document.querySelectorAll('[data-nav]').forEach(a=>{if(a.dataset.nav===currentRoute)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
-    if(isFormal&&!config.recruitmentOpen&&!['home','about','results'].includes(currentRoute)){recruitmentNotice();main.focus();return;}
-    if(currentRoute==='home')home();else if(currentRoute==='consent')consent();else if(currentRoute==='entry')entry();else if(currentRoute==='ready')ready();else if(currentRoute==='bakery')bakeryIntro();else if(currentRoute==='juice')juiceIntro();else if(currentRoute==='gaze')gaze();else if(currentRoute==='results')combinedResults();else about();
+    if(isFormal&&!config.recruitmentOpen&&!['home','about','results','analysis'].includes(currentRoute)){recruitmentNotice();main.focus();return;}
+    if(currentRoute==='home')home();else if(currentRoute==='consent')consent();else if(currentRoute==='entry')entry();else if(currentRoute==='ready')ready();else if(currentRoute==='bakery')bakeryIntro();else if(currentRoute==='juice')juiceIntro();else if(currentRoute==='gaze')gaze();else if(currentRoute==='results')combinedResults();else if(currentRoute==='analysis')analysis();else about();
     if(currentRoute==='home')showPreviousProtocolBackup(main);
     recoverUploads();window.scrollTo(0,0);main.focus({preventScroll:true});
   }
