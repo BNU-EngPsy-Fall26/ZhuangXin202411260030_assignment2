@@ -1,0 +1,231 @@
+{
+  "schema": "attention-kitchen-public-summary-v1",
+  "project_code": "8P4BGM",
+  "protocol_version": "kitchen-v2.0.0",
+  "analysis_snapshot_date": "2026-11-08",
+  "privacy": {
+    "aggregation": "group_only",
+    "contains_participant_ids": false,
+    "contains_trial_level_data": false,
+    "contains_timestamps": false,
+    "contains_session_or_run_ids": false,
+    "note_zh": "本文件仅含群体汇总统计，不含可关联到单个参与者的记录。"
+  },
+  "sample": {
+    "behavior_n": 14,
+    "gaze_valid_n": 6,
+    "complete_experiment_records": 28,
+    "seev_formal_events": 1400,
+    "pcp_formal_trials": 840
+  },
+  "seev": {
+    "units": {
+      "miss_rate": "percentage_points",
+      "weighted_loss": "weighted_misses_per_participant",
+      "correct_rt": "milliseconds",
+      "false_alarms": "count_per_participant",
+      "aoi_share": "percentage_points"
+    },
+    "event_totals": {
+      "hits": 1355,
+      "misses": 45,
+      "false_alarms": 156
+    },
+    "behavior": {
+      "high_value_miss_rate": {
+        "baseline_mean": 3.14,
+        "baseline_sd": 4.75,
+        "value_cue_mean": 2.29,
+        "value_cue_sd": 2.58,
+        "paired_difference_value_cue_minus_baseline": -0.86,
+        "ci95": [-3.60, 1.89],
+        "p": 0.512,
+        "cohens_dz": -0.18
+      },
+      "low_value_miss_rate": {
+        "baseline_mean": 2.57,
+        "baseline_sd": 2.53,
+        "value_cue_mean": 4.86,
+        "value_cue_sd": 5.48,
+        "paired_difference_value_cue_minus_baseline": 2.29,
+        "ci95": [-1.07, 5.64],
+        "p": 0.165,
+        "cohens_dz": 0.39
+      },
+      "overall_miss_rate": {
+        "baseline_mean": 2.86,
+        "baseline_sd": 2.91,
+        "value_cue_mean": 3.57,
+        "value_cue_sd": 2.95,
+        "paired_difference_value_cue_minus_baseline": 0.71,
+        "ci95": [-1.58, 3.01],
+        "p": 0.513,
+        "cohens_dz": 0.18
+      },
+      "weighted_loss": {
+        "baseline_mean": 4.57,
+        "baseline_sd": 6.10,
+        "value_cue_mean": 4.07,
+        "value_cue_sd": 3.43,
+        "paired_difference_value_cue_minus_baseline": -0.50,
+        "ci95": [-4.13, 3.13],
+        "p": 0.771,
+        "cohens_dz": -0.08
+      },
+      "correct_rt": {
+        "baseline_mean": 724.8,
+        "baseline_sd": 131.9,
+        "value_cue_mean": 712.1,
+        "value_cue_sd": 103.0,
+        "paired_difference_value_cue_minus_baseline": -12.7,
+        "ci95": [-59.3, 33.8],
+        "p": 0.564,
+        "cohens_dz": -0.16
+      },
+      "false_alarms": {
+        "baseline_mean": 5.29,
+        "baseline_sd": 3.73,
+        "value_cue_mean": 5.86,
+        "value_cue_sd": 4.47,
+        "paired_difference_value_cue_minus_baseline": 0.57,
+        "ci95": [-2.05, 3.19],
+        "p": 0.645,
+        "cohens_dz": 0.13
+      }
+    },
+    "gaze": {
+      "high_value_aoi_share": {
+        "baseline_mean": 50.89,
+        "baseline_sd": 17.30,
+        "value_cue_mean": 49.44,
+        "value_cue_sd": 13.86,
+        "paired_difference_value_cue_minus_baseline": -1.44,
+        "ci95": [-6.07, 3.19],
+        "p": 0.460,
+        "cohens_dz": -0.33
+      },
+      "aoi_share_matrix": {
+        "baseline": {
+          "high_frequency_high_value": 27.50,
+          "high_frequency_low_value": 8.69,
+          "low_frequency_high_value": 23.39,
+          "low_frequency_low_value": 12.21,
+          "outside": 28.21
+        },
+        "value_cue": {
+          "high_frequency_high_value": 25.03,
+          "high_frequency_low_value": 8.32,
+          "low_frequency_high_value": 24.41,
+          "low_frequency_low_value": 15.57,
+          "outside": 26.67
+        }
+      }
+    }
+  },
+  "pcp": {
+    "units": {
+      "accuracy": "percent",
+      "correct_rt": "milliseconds",
+      "timeout_rate": "percent"
+    },
+    "trial_totals": {
+      "correct": 781,
+      "incorrect": 53,
+      "timeouts": 6
+    },
+    "descriptive_cells": [
+      {
+        "display": "separated",
+        "task": "focused",
+        "accuracy_mean": 95.71,
+        "accuracy_sd": 6.46,
+        "correct_rt_mean": 1232.0,
+        "correct_rt_sd": 243.3,
+        "timeout_rate_mean": 0.71,
+        "timeout_rate_sd": 2.67
+      },
+      {
+        "display": "separated",
+        "task": "comparison",
+        "accuracy_mean": 90.71,
+        "accuracy_sd": 10.72,
+        "correct_rt_mean": 1443.6,
+        "correct_rt_sd": 301.6,
+        "timeout_rate_mean": 1.43,
+        "timeout_rate_sd": 3.63
+      },
+      {
+        "display": "integrated",
+        "task": "focused",
+        "accuracy_mean": 93.57,
+        "accuracy_sd": 8.42,
+        "correct_rt_mean": 1122.5,
+        "correct_rt_sd": 207.6,
+        "timeout_rate_mean": 0.0,
+        "timeout_rate_sd": 0.0
+      },
+      {
+        "display": "integrated",
+        "task": "comparison",
+        "accuracy_mean": 92.86,
+        "accuracy_sd": 7.26,
+        "correct_rt_mean": 1286.1,
+        "correct_rt_sd": 270.9,
+        "timeout_rate_mean": 1.43,
+        "timeout_rate_sd": 3.63
+      },
+      {
+        "display": "task_matched",
+        "task": "focused",
+        "accuracy_mean": 94.29,
+        "accuracy_sd": 7.56,
+        "correct_rt_mean": 1162.8,
+        "correct_rt_sd": 264.2,
+        "timeout_rate_mean": 0.71,
+        "timeout_rate_sd": 2.67
+      },
+      {
+        "display": "task_matched",
+        "task": "comparison",
+        "accuracy_mean": 90.71,
+        "accuracy_sd": 9.17,
+        "correct_rt_mean": 1268.0,
+        "correct_rt_sd": 279.9,
+        "timeout_rate_mean": 0.0,
+        "timeout_rate_sd": 0.0
+      }
+    ],
+    "key_inference": {
+      "task_matched_accuracy_minus_fixed_displays_average": {
+        "difference": -0.71,
+        "ci95": [-4.77, 3.35],
+        "p": 0.710,
+        "cohens_dz": -0.10
+      },
+      "comparison_rt_integrated_minus_separated": {
+        "difference": -157.5,
+        "ci95": [-263.1, -51.9],
+        "p": 0.0067,
+        "cohens_dz": -0.86
+      },
+      "rt_interaction": {
+        "difference": 48.0,
+        "ci95": [-100.4, 196.4],
+        "p": 0.497,
+        "cohens_dz": 0.19
+      }
+    },
+    "repeated_measures_anova": {
+      "accuracy": {
+        "display": {"F": 0.080, "df": [2, 26], "p": 0.924, "partial_eta_squared": 0.006},
+        "task": {"F": 1.988, "df": [1, 13], "p": 0.182, "partial_eta_squared": 0.133},
+        "interaction": {"F": 0.634, "df": [2, 26], "p": 0.538, "partial_eta_squared": 0.047}
+      },
+      "correct_rt": {
+        "display_greenhouse_geisser": {"F": 5.717, "df": [1.95, 25.32], "p": 0.009, "partial_eta_squared": 0.305},
+        "task": {"F": 33.616, "df": [1, 13], "p_display": "< .001", "partial_eta_squared": 0.721},
+        "interaction": {"F": 1.239, "df": [2, 26], "p": 0.306, "partial_eta_squared": 0.087}
+      }
+    }
+  }
+}
